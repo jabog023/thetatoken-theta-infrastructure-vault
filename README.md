@@ -1,0 +1,1 @@
+Server-side wallet for Theta. It is integrated into Sliver.tv backend. It manages user keys and handles interactions with Theta network.
