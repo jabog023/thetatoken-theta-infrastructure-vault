@@ -1,9 +1,13 @@
 package vault
 
 import (
+	"encoding/hex"
+	"fmt"
 	"net/http"
 
+	cmd "github.com/thetatoken/theta/cmd/thetacli/commands"
 	theta "github.com/thetatoken/theta/rpc"
+	"github.com/thetatoken/theta/types"
 	rpcc "github.com/ybbus/jsonrpc"
 )
 
@@ -21,11 +25,6 @@ type GetAccountArgs struct {
 	UserId string
 }
 
-// type GetAccountResult struct {
-// 	*types.Account
-// 	Address string `json:"address"`
-// }
-
 func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, result *theta.GetAccountResult) (err error) {
 	record, err := h.KeyManager.FindByUserId(args.UserId)
 	if err != nil {
@@ -39,36 +38,61 @@ func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, resu
 	return
 }
 
-// // ------------------------------- CreateAccount -----------------------------------
+// ------------------------------- Send -----------------------------------
 
-// type CreateAccountArgs struct {
-// 	Name       string `json:"name"`
-// 	Passphrase string `json:"passphrase"`
-// 	Type       string `json:"type"`
-// }
+type SendArgs struct {
+	UserId   string           // Required. User id of the source account.
+	To       []types.TxOutput `json:"to"`       // Required. Outputs including addresses and amount.
+	Fee      types.Coin       `json:"fee"`      // Optional. Transaction fee. Default to 0.
+	Gas      int64            `json:"gas"`      // Optional. Amount of gas. Default to 0.
+	Sequence int              `json:"sequence"` // Required. Sequence number of this transaction.
+}
 
-// type CreateAccountResult struct {
-// 	Key  keys.Info `json:"key"`
-// 	Seed string    `json:"seed"`
-// }
+func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.BroadcastRawTransactionResult) (err error) {
+	record, err := h.KeyManager.FindByUserId(args.UserId)
+	if err != nil {
+		return
+	}
 
-// const DefaultType = "ed25519"
+	// Wrap and add signer
+	total := types.Coins{}
+	for _, out := range args.To {
+		total = total.Plus(out.Coins)
+	}
+	input := types.TxInput{
+		Coins:    total,
+		Sequence: args.Sequence,
+	}
 
-// func (h *ThetaRPCHandler) CreateAccount(r *http.Request, args *CreateAccountArgs, result *CreateAccountResult) (err error) {
-// 	if args.Name == "" {
-// 		return errors.New("You must provide a name for the account")
-// 	}
-// 	var keyType string
-// 	if args.Type != "" {
-// 		keyType = args.Type
-// 	} else {
-// 		keyType = DefaultType
-// 	}
-// 	info, seed, err := context.GetKeyManager().Create(args.Name, args.Passphrase, keyType)
-// 	if err != nil {
-// 		return
-// 	}
-// 	result.Key = info
-// 	result.Seed = seed
-// 	return
-// }
+	input.Address, err = hex.DecodeString(record.Address)
+	if err != nil {
+		return
+	}
+	inputs := []types.TxInput{input}
+	tx := &types.SendTx{
+		Gas:     args.Gas,
+		Fee:     args.Fee,
+		Inputs:  inputs,
+		Outputs: args.To,
+	}
+	send := &cmd.SendTx{
+		Tx: tx,
+	}
+
+	send.AddSigner(record.PubKey)
+	txBytes, err := Sign(record.PubKey, record.PrivateKey, send)
+	fmt.Printf("tx bytes: %v, bytes: %v, err: %v\n", hex.EncodeToString(txBytes), txBytes, err)
+
+	if err != nil {
+		return
+	}
+
+	broadcastArgs := &theta.BroadcastRawTransactionArgs{TxBytes: hex.EncodeToString(txBytes)}
+	resp, err := h.Client.Call("theta.BroadcastRawTransaction", broadcastArgs)
+	if err != nil {
+		return
+	}
+
+	err = resp.GetObject(result)
+	return
+}
