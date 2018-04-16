@@ -99,3 +99,9 @@ func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.Br
 	err = resp.GetObject(&result)
 	return
 }
+
+// --------------------------- BroadcastRawTransaction ----------------------------
+// --------------------------- Reserve -------------------------------
+// --------------------------- Release -------------------------------
+// --------------------------- CreateServicePayment -------------------------------
+// --------------------------- SubmitServicePayment -------------------------------
