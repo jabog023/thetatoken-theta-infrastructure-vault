@@ -13,6 +13,20 @@ func (_m *MockKeyManager) Close() {
 	_m.Called()
 }
 
+// Create provides a mock function with given fields: r
+func (_m *MockKeyManager) Create(r Record) error {
+	ret := _m.Called(r)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(Record) error); ok {
+		r0 = rf(r)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // FindByUserId provides a mock function with given fields: userid
 func (_m *MockKeyManager) FindByUserId(userid string) (Record, error) {
 	ret := _m.Called(userid)
