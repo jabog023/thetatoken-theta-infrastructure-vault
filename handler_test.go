@@ -3,10 +3,10 @@ package vault
 import (
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"testing"
 
 	crypto "github.com/tendermint/go-crypto"
+	core_types "github.com/tendermint/tendermint/rpc/core/types"
 	cmd "github.com/thetatoken/theta/cmd/thetacli/commands"
 	theta "github.com/thetatoken/theta/rpc"
 	"github.com/thetatoken/theta/types"
@@ -146,9 +146,10 @@ func TestSend(t *testing.T) {
 		On("FindByUserId", "alice").
 		Return(getRecord(), nil)
 	expectedTxBytes := "12c7010805120c0a0847616d6d6157656910041a8e010a142674ae64cb5206b2afc6b6fbd0e5a65c025b5016120c0a085468657461576569107b1801224212406c6dbdf253f520028743823c395cdb03dbf7ed399a8e6b251b5ac11d2ee1cb52c92380474884d281933288b7e7249954c8d595c94d85c19d9083c4307b811a062a221220355897db094c7aac8242e0bce8ae6a4db8b6c08b38bed3290ea3560a6515cc3b22240a14efee576f3d668674bc73e007f6abfa243311bd37120c0a085468657461576569107b"
+	resp := theta.BroadcastRawTransactionResult{&core_types.ResultBroadcastTxCommit{Height: 123}}
 	mockRPC.
 		On("Call", "theta.BroadcastRawTransaction", &theta.BroadcastRawTransactionArgs{TxBytes: expectedTxBytes}).
-		Return(&rpcc.RPCResponse{Result: nil}, nil).Once()
+		Return(&rpcc.RPCResponse{Result: resp}, nil).Once()
 
 	address, _ := hex.DecodeString("EFEE576F3D668674BC73E007F6ABFA243311BD37")
 	args = &SendArgs{
@@ -163,7 +164,36 @@ func TestSend(t *testing.T) {
 	}
 	result = &theta.BroadcastRawTransactionResult{}
 	err = handler.Send(nil, args, result)
-	fmt.Printf("%v\n", result)
+	assert.Equal(123, result.Height)
 	assert.Nil(err)
 	mockRPC.AssertExpectations(t)
+
+	// Should pass the error if RPC calls has error.
+	mockRPC = &MockRPCClient{}
+	mockKeyManager = &MockKeyManager{}
+	handler = &ThetaRPCHandler{mockRPC, mockKeyManager}
+	mockKeyManager.
+		On("FindByUserId", "alice").
+		Return(getRecord(), nil)
+	mockRPC.
+		On("Call", "theta.BroadcastRawTransaction", &theta.BroadcastRawTransactionArgs{TxBytes: expectedTxBytes}).
+		Return(&rpcc.RPCResponse{Error: &rpcc.RPCError{Code: 3000, Message: "Failed."}}, nil).Once()
+
+	address, _ = hex.DecodeString("EFEE576F3D668674BC73E007F6ABFA243311BD37")
+	args = &SendArgs{
+		UserId: "alice",
+		To: []types.TxOutput{{
+			Address: address,
+			Coins:   types.Coins{{Amount: 123, Denom: "ThetaWei"}},
+		}},
+		Sequence: 1,
+		Fee:      types.Coin{Amount: 4, Denom: "GammaWei"},
+		Gas:      5,
+	}
+	result = &theta.BroadcastRawTransactionResult{}
+	err = handler.Send(nil, args, result)
+	assert.NotNil(err)
+	assert.Equal("3000: Failed.", err.Error())
+	mockRPC.AssertExpectations(t)
+
 }

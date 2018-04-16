@@ -5,10 +5,10 @@ GOTOOLS =	github.com/mitchellh/gox \
 all: get_vendor_deps install test
 
 build:
-	go build
+	go build ./cmd/...
 
 install:
-	go install
+	go install ./cmd/...
 
 test: test_unit
 

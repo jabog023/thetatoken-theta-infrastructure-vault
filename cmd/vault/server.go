@@ -23,7 +23,13 @@ func startServer() {
 	s.RegisterCodec(json.NewCodec(), "application/json")
 	s.RegisterCodec(json.NewCodec(), "application/json;charset=UTF-8")
 	client := rpcc.NewRPCClient("http://localhost:16888/rpc")
-	handler := &vault.ThetaRPCHandler{client, nil}
+	keyManager, err := vault.NewMySqlKeyManager("root", "", "theta")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer keyManager.Close()
+
+	handler := &vault.ThetaRPCHandler{client, keyManager}
 	s.RegisterService(handler, "theta")
 	r := mux.NewRouter()
 	r.Handle("/rpc", s)
@@ -41,14 +47,13 @@ func startServer() {
 
 func test() {
 	client := rpcc.NewRPCClient("http://localhost:16888/rpc")
-	// result, err := client.Call("theta.GetAccounts")
 	result, err := client.Call("theta.GetAccount", theta.GetAccountArgs{Name: "faucet"})
 
 	fmt.Printf("result: %v, %v\n", result, err)
 }
 
 func main() {
-	test()
+	// test()
 
 	go startServer()
 

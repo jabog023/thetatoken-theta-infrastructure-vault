@@ -2,7 +2,6 @@ package vault
 
 import (
 	"encoding/hex"
-	"fmt"
 	"net/http"
 
 	cmd "github.com/thetatoken/theta/cmd/thetacli/commands"
@@ -81,7 +80,6 @@ func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.Br
 
 	send.AddSigner(record.PubKey)
 	txBytes, err := Sign(record.PubKey, record.PrivateKey, send)
-	fmt.Printf("tx bytes: %v, bytes: %v, err: %v\n", hex.EncodeToString(txBytes), txBytes, err)
 
 	if err != nil {
 		return
@@ -89,10 +87,15 @@ func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.Br
 
 	broadcastArgs := &theta.BroadcastRawTransactionArgs{TxBytes: hex.EncodeToString(txBytes)}
 	resp, err := h.Client.Call("theta.BroadcastRawTransaction", broadcastArgs)
+
 	if err != nil {
 		return
 	}
+	if resp.Error != nil {
+		err = resp.Error
+		return
+	}
 
-	err = resp.GetObject(result)
+	err = resp.GetObject(&result)
 	return
 }
