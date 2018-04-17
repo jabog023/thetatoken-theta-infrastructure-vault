@@ -1,8 +1,10 @@
 package vault
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
+	"net/http"
 	"testing"
 
 	crypto "github.com/tendermint/go-crypto"
@@ -57,9 +59,11 @@ func TestGetAccount(t *testing.T) {
 	mockRPC.
 		On("Call", "theta.GetAccount", mock.Anything).
 		Return(&rpcc.RPCResponse{Result: &types.Account{Balance: types.Coins{{Amount: 123}}}}, nil)
-	args = &GetAccountArgs{UserId: "alice"}
+	args = &GetAccountArgs{}
 	result = &theta.GetAccountResult{}
-	err = handler.GetAccount(nil, args, result)
+	req, _ := http.NewRequest("", "", bytes.NewBufferString(""))
+	req.Header.Add("X-Auth-User", "alice")
+	err = handler.GetAccount(req, args, result)
 	assert.Nil(err)
 	assert.Equal(int64(123), result.Balance[0].Amount)
 
@@ -74,7 +78,9 @@ func TestGetAccount(t *testing.T) {
 		On("Call", "theta.GetAccount", mock.Anything).
 		Return(nil, errors.New("rpc error"))
 	result = &theta.GetAccountResult{}
-	err = handler.GetAccount(nil, args, result)
+	req, _ = http.NewRequest("", "", bytes.NewBufferString(""))
+	req.Header.Add("X-Auth-User", "alice")
+	err = handler.GetAccount(req, args, result)
 	assert.NotNil(err)
 
 	// Should return error when key manager fail
@@ -88,7 +94,9 @@ func TestGetAccount(t *testing.T) {
 		On("Call", "theta.GetAccount", mock.Anything).
 		Return(&rpcc.RPCResponse{Result: &types.Account{Balance: types.Coins{{Amount: 123}}}}, nil)
 	result = &theta.GetAccountResult{}
-	err = handler.GetAccount(nil, args, result)
+	req, _ = http.NewRequest("", "", bytes.NewBufferString(""))
+	req.Header.Add("X-Auth-User", "alice")
+	err = handler.GetAccount(req, args, result)
 	assert.NotNil(err)
 }
 
@@ -153,7 +161,6 @@ func TestSend(t *testing.T) {
 
 	address, _ := hex.DecodeString("EFEE576F3D668674BC73E007F6ABFA243311BD37")
 	args = &SendArgs{
-		UserId: "alice",
 		To: []types.TxOutput{{
 			Address: address,
 			Coins:   types.Coins{{Amount: 123, Denom: "ThetaWei"}},
@@ -163,7 +170,9 @@ func TestSend(t *testing.T) {
 		Gas:      5,
 	}
 	result = &theta.BroadcastRawTransactionResult{}
-	err = handler.Send(nil, args, result)
+	req, _ := http.NewRequest("", "", bytes.NewBufferString(""))
+	req.Header.Add("X-Auth-User", "alice")
+	err = handler.Send(req, args, result)
 	assert.Equal(123, result.Height)
 	assert.Nil(err)
 	mockRPC.AssertExpectations(t)
@@ -181,7 +190,6 @@ func TestSend(t *testing.T) {
 
 	address, _ = hex.DecodeString("EFEE576F3D668674BC73E007F6ABFA243311BD37")
 	args = &SendArgs{
-		UserId: "alice",
 		To: []types.TxOutput{{
 			Address: address,
 			Coins:   types.Coins{{Amount: 123, Denom: "ThetaWei"}},
@@ -191,7 +199,9 @@ func TestSend(t *testing.T) {
 		Gas:      5,
 	}
 	result = &theta.BroadcastRawTransactionResult{}
-	err = handler.Send(nil, args, result)
+	req, _ = http.NewRequest("", "", bytes.NewBufferString(""))
+	req.Header.Add("X-Auth-User", "alice")
+	err = handler.Send(req, args, result)
 	assert.NotNil(err)
 	assert.Equal("3000: Failed.", err.Error())
 	mockRPC.AssertExpectations(t)

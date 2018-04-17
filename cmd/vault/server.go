@@ -13,7 +13,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/rpc/v2"
 	json "github.com/gorilla/rpc/v2/json2"
-	theta "github.com/thetatoken/theta/rpc"
 	"github.com/thetatoken/vault"
 	rpcc "github.com/ybbus/jsonrpc"
 )
@@ -21,6 +20,7 @@ import (
 // TODO: read port from config.
 const RPCPort = "20000"
 const MAXConnections = 1000
+const Debug = false
 
 func decompressMiddleware(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -48,6 +48,9 @@ func decompressMiddleware(handler http.Handler) http.Handler {
 }
 
 func debugMiddleware(handler http.Handler) http.Handler {
+	if !Debug {
+		return handler
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
@@ -100,16 +103,7 @@ func startServer() {
 	return
 }
 
-func test() {
-	client := rpcc.NewRPCClient("http://localhost:16888/rpc")
-	result, err := client.Call("theta.GetAccount", theta.GetAccountArgs{Name: "faucet"})
-
-	fmt.Printf("result: %v, %v\n", result, err)
-}
-
 func main() {
-	// test()
-
 	go startServer()
 
 	select {}

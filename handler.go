@@ -2,6 +2,7 @@ package vault
 
 import (
 	"encoding/hex"
+	"errors"
 	"net/http"
 
 	cmd "github.com/thetatoken/theta/cmd/thetacli/commands"
@@ -20,12 +21,15 @@ type ThetaRPCHandler struct {
 
 // ------------------------------- GetAccount -----------------------------------
 
-type GetAccountArgs struct {
-	UserId string
-}
+type GetAccountArgs struct{}
 
 func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, result *theta.GetAccountResult) (err error) {
-	record, err := h.KeyManager.FindByUserId(args.UserId)
+	userid := r.Header.Get("X-Auth-User")
+	if userid == "" {
+		return errors.New("No userid is passed in.")
+	}
+
+	record, err := h.KeyManager.FindByUserId(userid)
 	if err != nil {
 		return
 	}
@@ -40,7 +44,6 @@ func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, resu
 // ------------------------------- Send -----------------------------------
 
 type SendArgs struct {
-	UserId   string           // Required. User id of the source account.
 	To       []types.TxOutput `json:"to"`       // Required. Outputs including addresses and amount.
 	Fee      types.Coin       `json:"fee"`      // Optional. Transaction fee. Default to 0.
 	Gas      int64            `json:"gas"`      // Optional. Amount of gas. Default to 0.
@@ -48,7 +51,12 @@ type SendArgs struct {
 }
 
 func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.BroadcastRawTransactionResult) (err error) {
-	record, err := h.KeyManager.FindByUserId(args.UserId)
+	userid := r.Header.Get("X-Auth-User")
+	if userid == "" {
+		return errors.New("No userid is passed in.")
+	}
+
+	record, err := h.KeyManager.FindByUserId(userid)
 	if err != nil {
 		return
 	}
