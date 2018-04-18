@@ -3,6 +3,7 @@ package vault
 import (
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 
 	cmd "github.com/thetatoken/theta/cmd/thetacli/commands"
@@ -33,11 +34,14 @@ func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, resu
 	if err != nil {
 		return
 	}
+	fmt.Printf("<<<<< get account, adddress: %v\n", record.Address)
 	resp, err := h.Client.Call("theta.GetAccount", theta.GetAccountArgs{Address: record.Address})
 	if err != nil {
 		return
 	}
 	err = resp.GetObject(result)
+	fmt.Printf("<<<<< get account, result: %v\nerr: %v\n", result, err)
+
 	return
 }
 

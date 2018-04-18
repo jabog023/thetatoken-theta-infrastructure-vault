@@ -79,7 +79,9 @@ func startServer() {
 	s.RegisterCodec(json.NewCodec(), "application/json")
 	s.RegisterCodec(json.NewCodec(), "application/json;charset=UTF-8")
 	client := rpcc.NewRPCClient("http://localhost:16888/rpc")
-	keyManager, err := vault.NewMySqlKeyManager("root", "", "theta")
+	// keyManager, err := vault.NewMySqlKeyManager("root", "", "theta")
+	keyManager, err := vault.NewSqlKeyManager("postgres", "", "localhost", "sliver_video_serving")
+
 	if err != nil {
 		log.Fatal(err)
 	}

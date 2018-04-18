@@ -7,7 +7,7 @@ import (
 	"log"
 	"strings"
 
-	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 	crypto "github.com/tendermint/go-crypto"
 	"github.com/tendermint/go-crypto/keys"
 	"github.com/thetatoken/theta/types"
@@ -49,29 +49,33 @@ func genKey() (address string, pubkey crypto.PubKey, privKey crypto.PrivKey, see
 
 // ----------------- MySQL KeyManager ---------------------
 
-var _ KeyManager = MySqlKeyManager{}
+var _ KeyManager = SqlKeyManager{}
 
-const TABLE_NAME = "vault"
+const TableName = "user_theta_native_wallet"
 
-type MySqlKeyManager struct {
+type SqlKeyManager struct {
 	db *sql.DB
 }
 
-func NewMySqlKeyManager(user string, pass string, dbname string) (*MySqlKeyManager, error) {
-	db, err := sql.Open("mysql", fmt.Sprintf("%s:%s@/%s", user, pass, dbname))
+func NewSqlKeyManager(user string, pass string, host string, dbname string) (*SqlKeyManager, error) {
+	db, err := sql.Open("postgres", fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", user, pass, host, dbname))
+
 	if err != nil {
 		return nil, err
 	}
-	return &MySqlKeyManager{db}, nil
+	return &SqlKeyManager{db}, nil
 }
 
-func (km MySqlKeyManager) FindByUserId(userid string) (Record, error) {
-	row := km.db.QueryRow("SELECT privkey, pubkey, address FROM vault WHERE userid=?", userid)
+func (km SqlKeyManager) FindByUserId(userid string) (Record, error) {
+	query := fmt.Sprintf("SELECT privkey::bytea, pubkey::bytea, address::bytea FROM %s WHERE userid=$1", TableName)
+	row := km.db.QueryRow(query, userid)
+
 	var privkeyBytes, pubkeyBytes, address []byte
 	err := row.Scan(&privkeyBytes, &pubkeyBytes, &address)
 	switch {
 	case err == sql.ErrNoRows:
 		log.Printf("No record with user ID: %s. Creating keys.", userid)
+
 		address, pubkey, privkey, _, err := genKey()
 		if err != nil {
 			return Record{}, err
@@ -95,6 +99,8 @@ func (km MySqlKeyManager) FindByUserId(userid string) (Record, error) {
 		types.FromBytes(pubkeyBytes, &pubKey)
 		privKey := crypto.PrivKey{}
 		types.FromBytes(privkeyBytes, &privKey)
+
+		fmt.Printf("<<<<< adddress: %v, \n%v", hex.EncodeToString(address), address)
 		record := Record{
 			UserID:     userid,
 			PubKey:     pubKey,
@@ -105,12 +111,12 @@ func (km MySqlKeyManager) FindByUserId(userid string) (Record, error) {
 	}
 }
 
-func (km MySqlKeyManager) Close() {
+func (km SqlKeyManager) Close() {
 	km.db.Close()
 }
 
-func (km MySqlKeyManager) Create(record Record) error {
-	sm := fmt.Sprintf("INSERT INTO %s (userid, pubkey, privkey, address) VALUES (?, UNHEX(?), UNHEX(?), UNHEX(?))", TABLE_NAME)
+func (km SqlKeyManager) Create(record Record) error {
+	sm := fmt.Sprintf("INSERT INTO %s (userid, pubkey, privkey, address) VALUES ($1, DECODE($2, 'hex'), DECODE($3, 'hex'), DECODE($4, 'hex'))", TableName)
 
 	pubkeyBytes, err := types.ToBytes(&record.PubKey)
 	if err != nil {
