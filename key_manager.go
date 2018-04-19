@@ -100,7 +100,6 @@ func (km SqlKeyManager) FindByUserId(userid string) (Record, error) {
 		privKey := crypto.PrivKey{}
 		types.FromBytes(privkeyBytes, &privKey)
 
-		fmt.Printf("<<<<< adddress: %v, \n%v", hex.EncodeToString(address), address)
 		record := Record{
 			UserID:     userid,
 			PubKey:     pubKey,
