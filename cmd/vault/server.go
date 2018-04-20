@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/rpc/v2"
 	json "github.com/gorilla/rpc/v2/json2"
+	"github.com/spf13/viper"
 	"github.com/thetatoken/vault"
 	rpcc "github.com/ybbus/jsonrpc"
 )
@@ -79,8 +80,7 @@ func startServer() {
 	s.RegisterCodec(json.NewCodec(), "application/json")
 	s.RegisterCodec(json.NewCodec(), "application/json;charset=UTF-8")
 	client := rpcc.NewRPCClient("http://localhost:16888/rpc")
-	// keyManager, err := vault.NewMySqlKeyManager("root", "", "theta")
-	keyManager, err := vault.NewSqlKeyManager("postgres", "", "localhost", "sliver_video_serving")
+	keyManager, err := vault.NewSqlKeyManager(viper.GetString("DbUser"), viper.GetString("DbPass"), viper.GetString("DbHost"), viper.GetString("DbName"))
 
 	if err != nil {
 		log.Fatal(err)
@@ -105,7 +105,22 @@ func startServer() {
 	return
 }
 
+func readConfig() {
+	viper.SetDefault("DbHost", "localhost")
+	viper.SetDefault("DbName", "sliver_video_serving")
+	viper.SetDefault("DbTableName", "user_theta_native_wallet")
+
+	viper.SetConfigName("config")
+	viper.AddConfigPath(".")
+	err := viper.ReadInConfig()
+	if err != nil {
+		panic(fmt.Errorf("Fatal error config file: %s \n", err))
+	}
+}
+
 func main() {
+	readConfig()
+
 	go startServer()
 
 	select {}

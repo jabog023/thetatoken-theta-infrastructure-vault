@@ -1,0 +1,5 @@
+DbHost: localhost
+DbName: test
+DbTableName: vault
+DbUser: admin
+DbPass: admin
