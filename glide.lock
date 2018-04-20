@@ -1,5 +1,5 @@
-hash: 0526b0dfdebe03aeef2c50001023bdf8d8c12904b3a6bd655856b311eea8ba1d
-updated: 2018-04-18T15:36:45.999774-07:00
+hash: 7a706c942d5b405aab063d97681e44ade51a8b3e6ac8a79a95263d9fbad3a13c
+updated: 2018-04-20T12:47:46.938011-07:00
 imports:
 - name: github.com/aws/aws-sdk-go
   version: 9b0098a71f6d4d473a26ec8ad3c2feaac6eb1da6
@@ -88,6 +88,8 @@ imports:
   version: b84e30acd515aadc4b783ad4ff83aff3299bdfe0
 - name: github.com/lib/pq
   version: d34b9ff171c21ad295489235aec8b6626023cd04
+  subpackages:
+  - oid
 - name: github.com/magiconair/properties
   version: 2c9e9502788518c97fe44e8955cd069417ee89df
 - name: github.com/mattn/go-isatty
@@ -102,6 +104,8 @@ imports:
   version: 792786c7400a136282c1664665ae0a8db921c6c2
   subpackages:
   - difflib
+- name: github.com/sirupsen/logrus
+  version: c155da19408a8799da419ed3eeb0cb5db0ad5dbc
 - name: github.com/spf13/afero
   version: 63644898a8da0bc22138abf860edaf5277b6102e
   subpackages:

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/tendermint/go-wire/data"
 	cmd "github.com/thetatoken/theta/cmd/thetacli/commands"
 	"github.com/thetatoken/theta/common"
@@ -20,6 +21,15 @@ type RPCClient interface {
 type ThetaRPCHandler struct {
 	Client     RPCClient
 	KeyManager KeyManager
+	logger     *log.Entry
+}
+
+func NewRPCHandler(client RPCClient, km KeyManager) *ThetaRPCHandler {
+	return &ThetaRPCHandler{
+		Client:     client,
+		KeyManager: km,
+		logger:     log.WithFields(log.Fields{"component": "handler"}),
+	}
 }
 
 // ------------------------------- GetAccount -----------------------------------
@@ -28,6 +38,7 @@ type GetAccountArgs struct{}
 
 func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, result *theta.GetAccountResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
+	h.logger.WithFields(log.Fields{"userid": userid, "args": args}).Info("GetAccount")
 	if userid == "" {
 		return errors.New("No userid is passed in.")
 	}
@@ -56,6 +67,7 @@ type SendArgs struct {
 
 func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.BroadcastRawTransactionResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
+	h.logger.WithFields(log.Fields{"userid": userid, "args": args}).Info("Send")
 	if userid == "" {
 		return errors.New("No userid is passed in.")
 	}
@@ -115,6 +127,7 @@ func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.Br
 
 func (h *ThetaRPCHandler) BroadcastRawTransaction(r *http.Request, args *theta.BroadcastRawTransactionArgs, result *theta.BroadcastRawTransactionResult) (err error) {
 	resp, err := h.Client.Call("theta.BroadcastRawTransaction", args)
+	h.logger.WithFields(log.Fields{"args": args}).Info("BroadcastRawTransaction")
 
 	if err != nil {
 		return
@@ -142,6 +155,7 @@ type ReserveFundArgs struct {
 
 func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, result *theta.ReserveFundResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
+	h.logger.WithFields(log.Fields{"userid": userid, "args": args}).Info("ReserveFund")
 	if userid == "" {
 		return errors.New("No userid is passed in.")
 	}
@@ -225,6 +239,7 @@ type ReleaseFundArgs struct {
 
 func (h *ThetaRPCHandler) ReleaseFund(r *http.Request, args *ReleaseFundArgs, result *theta.ReleaseFundResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
+	h.logger.WithFields(log.Fields{"userid": userid, "args": args}).Info("ReleaseFund")
 	if userid == "" {
 		return errors.New("No userid is passed in.")
 	}
@@ -286,6 +301,7 @@ type CreateServicePaymentArgs struct {
 
 func (h *ThetaRPCHandler) CreateServicePayment(r *http.Request, args *CreateServicePaymentArgs, result *theta.CreateServicePaymentResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
+	h.logger.WithFields(log.Fields{"userid": userid, "args": args}).Info("CreateServicePayment")
 	if userid == "" {
 		return errors.New("No userid is passed in.")
 	}
@@ -358,6 +374,7 @@ type SubmitServicePaymentArgs struct {
 
 func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServicePaymentArgs, result *theta.SubmitServicePaymentResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
+	h.logger.WithFields(log.Fields{"userid": userid, "args": args}).Info("SubmitServicePayment")
 	if userid == "" {
 		return errors.New("No userid is passed in.")
 	}

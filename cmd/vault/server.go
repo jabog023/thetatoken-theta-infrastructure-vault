@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -13,15 +12,13 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/rpc/v2"
 	json "github.com/gorilla/rpc/v2/json2"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/thetatoken/vault"
 	rpcc "github.com/ybbus/jsonrpc"
 )
 
-// TODO: read port from config.
-const RPCPort = "20000"
-const MAXConnections = 1000
-const Debug = false
+var logger = log.WithFields(log.Fields{"component": "server"})
 
 func decompressMiddleware(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,14 +29,14 @@ func decompressMiddleware(handler http.Handler) http.Handler {
 
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			log.Printf("Error reading body: %v", err)
+			logger.WithFields(log.Fields{"error": err}).Error("Error reading body")
 			http.Error(w, "can't read body", http.StatusBadRequest)
 			return
 		}
 		// And now set a new body, which will simulate the same data we read:
 		r.Body, err = gzip.NewReader(bytes.NewBuffer(body))
 		if err != nil {
-			log.Printf("Error decompressing request body: %v", err)
+			logger.WithFields(log.Fields{"error": err}).Error("Error decompressing request body")
 			http.Error(w, "Error decompressing request body", http.StatusBadRequest)
 			return
 		}
@@ -49,26 +46,18 @@ func decompressMiddleware(handler http.Handler) http.Handler {
 }
 
 func debugMiddleware(handler http.Handler) http.Handler {
-	if !Debug {
+	if !viper.GetBool("Debug") {
 		return handler
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			log.Printf("Error reading body: %v", err)
+			logger.WithFields(log.Fields{"error": err}).Debug("Error reading body")
 			http.Error(w, "can't read body", http.StatusBadRequest)
 			return
 		}
 
-		// Loop through headers
-		for name, headers := range r.Header {
-			name = strings.ToLower(name)
-			for _, h := range headers {
-				fmt.Printf("Header: %v: %v\n", name, h)
-			}
-		}
-
-		log.Printf("Body: %v\n", string(body))
+		logger.WithFields(log.Fields{"body": string(body), "headers": r.Header}).Debug("Request body")
 
 		r.Body = ioutil.NopCloser(bytes.NewBuffer(body))
 		handler.ServeHTTP(w, r)
@@ -83,25 +72,26 @@ func startServer() {
 	keyManager, err := vault.NewSqlKeyManager(viper.GetString("DbUser"), viper.GetString("DbPass"), viper.GetString("DbHost"), viper.GetString("DbName"))
 
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	defer keyManager.Close()
 
-	handler := &vault.ThetaRPCHandler{client, keyManager}
+	handler := vault.NewRPCHandler(client, keyManager)
 	s.RegisterService(handler, "theta")
 	r := mux.NewRouter()
 	r.Use(debugMiddleware)
 	r.Use(decompressMiddleware)
 	r.Handle("/rpc", s)
-	// TODO: add a filter to translate lower case method name to uppper case.
 
-	l, err := net.Listen("tcp", ":"+RPCPort)
+	port := viper.GetString("RPCPort")
+	l, err := net.Listen("tcp", ":"+port)
 	if err != nil {
-		log.Fatalf("Listen: %v", err)
+		logger.Fatalf("Listen: %v", err)
 	}
 	defer l.Close()
 
-	log.Fatal(http.Serve(l, r))
+	logger.Info(fmt.Sprintf("Listening on %s\n", port))
+	logger.Fatal(http.Serve(l, r))
 	return
 }
 
@@ -109,12 +99,18 @@ func readConfig() {
 	viper.SetDefault("DbHost", "localhost")
 	viper.SetDefault("DbName", "sliver_video_serving")
 	viper.SetDefault("DbTableName", "user_theta_native_wallet")
+	viper.SetDefault("Debug", false)
+	viper.SetDefault("PRCPort", "20000")
 
 	viper.SetConfigName("config")
 	viper.AddConfigPath(".")
 	err := viper.ReadInConfig()
 	if err != nil {
-		panic(fmt.Errorf("Fatal error config file: %s \n", err))
+		logger.WithFields(log.Fields{"error": err}).Fatal(fmt.Errorf("Fatal error config file"))
+	}
+
+	if viper.GetBool("Debug") {
+		log.SetLevel(log.DebugLevel)
 	}
 }
 
