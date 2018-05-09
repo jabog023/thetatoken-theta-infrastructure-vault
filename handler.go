@@ -220,6 +220,10 @@ func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, re
 	}
 
 	err = resp.GetObject(&result)
+
+	// Set reserve_sequence to the tx sequence number.
+	result.ReserveSequence = args.Sequence
+
 	return
 }
 
@@ -345,18 +349,8 @@ func (h *ThetaRPCHandler) CreateServicePayment(r *http.Request, args *CreateServ
 		return
 	}
 
-	broadcastArgs := &theta.BroadcastRawTransactionArgs{TxBytes: hex.EncodeToString(txBytes)}
-	resp, err := h.Client.Call("theta.BroadcastRawTransaction", broadcastArgs)
+	result.Payment = hex.EncodeToString(txBytes)
 
-	if err != nil {
-		return
-	}
-	if resp.Error != nil {
-		err = resp.Error
-		return
-	}
-
-	err = resp.GetObject(&result)
 	return
 }
 
