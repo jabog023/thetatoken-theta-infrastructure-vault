@@ -101,6 +101,7 @@ func readConfig() {
 	viper.SetDefault("DbTableName", "user_theta_native_wallet")
 	viper.SetDefault("Debug", false)
 	viper.SetDefault("PRCPort", "20000")
+	viper.SetDefault("ChainID", "test_chain_id")
 
 	viper.SetConfigName("config")
 	viper.AddConfigPath(".")

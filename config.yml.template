@@ -3,3 +3,4 @@ DbName: test
 DbTableName: vault
 DbUser: admin
 DbPass: admin
+ChainID: test_chain_id
