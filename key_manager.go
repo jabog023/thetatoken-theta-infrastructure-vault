@@ -4,10 +4,14 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"os/exec"
+	"strconv"
 	"strings"
 
+	"github.com/spf13/viper"
+
 	_ "github.com/lib/pq"
+	log "github.com/sirupsen/logrus"
 	crypto "github.com/tendermint/go-crypto"
 	"github.com/tendermint/go-crypto/keys"
 	"github.com/thetatoken/theta/types"
@@ -47,7 +51,7 @@ func genKey() (address string, pubkey crypto.PubKey, privKey crypto.PrivKey, see
 	return
 }
 
-// ----------------- MySQL KeyManager ---------------------
+// ----------------- SQL KeyManager ---------------------
 
 var _ KeyManager = SqlKeyManager{}
 
@@ -90,6 +94,9 @@ func (km SqlKeyManager) FindByUserId(userid string) (Record, error) {
 		if err != nil {
 			return Record{}, err
 		}
+
+		km.maybeAddInitalFund(address)
+
 		return record, nil
 	case err != nil:
 		log.Printf(err.Error())
@@ -107,6 +114,19 @@ func (km SqlKeyManager) FindByUserId(userid string) (Record, error) {
 			Address:    hex.EncodeToString(address),
 		}
 		return record, nil
+	}
+}
+
+func (km SqlKeyManager) maybeAddInitalFund(address string) {
+	amount := viper.GetInt64("InitialFund")
+	if amount <= 0 {
+		return
+	}
+	log.WithFields(log.Fields{"address": address, "amount": amount}).Info("Adding initial fund")
+	cmd := exec.Command("add_fund.sh", address, strconv.FormatInt(amount, 10))
+	err := cmd.Run()
+	if err != nil {
+		log.WithFields(log.Fields{"err": err, "output": string(err.(*exec.ExitError).Stderr)}).Error("Failed to add fund")
 	}
 }
 
