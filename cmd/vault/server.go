@@ -118,6 +118,7 @@ func readConfig() {
 func main() {
 	readConfig()
 
+	go vault.Faucet.Process()
 	go startServer()
 
 	select {}
