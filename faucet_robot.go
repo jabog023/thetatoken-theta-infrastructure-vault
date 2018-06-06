@@ -37,14 +37,18 @@ func (fr *FaucetManager) Process() {
 }
 
 func addInitalFund(address string) {
-	amount := viper.GetInt64("InitialFund")
-	if amount <= 0 {
+	thetaAmount := viper.GetInt64("InitialTheta")
+	gammaAmount := viper.GetInt64("InitialGamma")
+
+	if thetaAmount <= 0 && gammaAmount <= 0 {
 		return
 	}
-	log.WithFields(log.Fields{"address": address, "amount": amount}).Info("Adding initial fund")
-	cmd := exec.Command("add_fund.sh", address, strconv.FormatInt(amount, 10))
+	log.WithFields(log.Fields{"address": address, "theta": thetaAmount, "gamma": gammaAmount}).Info("Adding initial fund")
+	cmd := exec.Command("add_fund.sh", address, strconv.FormatInt(thetaAmount, 10), strconv.FormatInt(gammaAmount, 10))
 	err := cmd.Run()
 	if err != nil {
 		log.WithFields(log.Fields{"err": err, "output": string(err.(*exec.ExitError).Stderr)}).Error("Failed to add fund")
+	} else {
+		log.Info("Successfully added fund")
 	}
 }

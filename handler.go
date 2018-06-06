@@ -45,14 +45,17 @@ func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, resu
 
 	record, err := h.KeyManager.FindByUserId(userid)
 	if err != nil {
+		h.logger.WithFields(log.Fields{"userid": userid, "args": args, "error": err}).Error("Error in KeyManager.FindByUserId()")
 		return
 	}
 	resp, err := h.Client.Call("theta.GetAccount", theta.GetAccountArgs{Address: record.Address})
 	if err != nil {
+		h.logger.WithFields(log.Fields{"userid": userid, "args": args, "error": err}).Error("Error in RPC call: theta.GetAccount()")
 		return
 	}
 	err = resp.GetObject(result)
 	result.Address = record.Address
+	h.logger.WithFields(log.Fields{"result": result, "error": err}).Debug("Forwarding RPC call result")
 	return
 }
 

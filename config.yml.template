@@ -4,3 +4,7 @@ DbTableName: vault
 DbUser: admin
 DbPass: admin
 ChainID: test_chain_id
+RPCPort: 20000
+Debug: true
+InitialTheta: 10000000
+InitialGamma: 10000
