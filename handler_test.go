@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
 	log "github.com/sirupsen/logrus"
-	crypto "github.com/tendermint/go-crypto"
-	core_types "github.com/tendermint/tendermint/rpc/core/types"
 	cmd "github.com/thetatoken/theta/cmd/thetacli/commands"
+	crypto "github.com/thetatoken/theta/go-crypto"
 	theta "github.com/thetatoken/theta/rpc"
+	core_types "github.com/thetatoken/theta/tendermint/rpc/core/types"
 	"github.com/thetatoken/theta/types"
 	rpcc "github.com/ybbus/jsonrpc"
 
@@ -132,10 +133,13 @@ func TestSign(t *testing.T) {
 	sendTx.AddSigner(record.PubKey)
 	txBytes, err := Sign(record.PubKey, record.PrivateKey, sendTx)
 
-	expectedTxBytes, _ := hex.DecodeString("12c7010805120c0a0847616d6d6157656910041a8e010a142674ae64cb5206b2afc6b6fbd0e5a65c025b5016120c0a085468657461576569107b1801224212406c6dbdf253f520028743823c395cdb03dbf7ed399a8e6b251b5ac11d2ee1cb52c92380474884d281933288b7e7249954c8d595c94d85c19d9083c4307b811a062a221220355897db094c7aac8242e0bce8ae6a4db8b6c08b38bed3290ea3560a6515cc3b22240a14efee576f3d668674bc73e007f6abfa243311bd37120c0a085468657461576569107b")
+	expectedTxBytes, _ := hex.DecodeString("12C7010805120C0A0847616D6D6157656910041A8E010A142674AE64CB5206B2AFC6B6FBD0E5A65C025B5016120C0A085468657461576569107B18012242124043F1E91C42DF3235A2849C886716A1749B3C563FC62BD38AF647CC716730DB32DCEA959C263C6A74CDC79DEA289D2DEA0A83C063230748391EA32C79EBE6300B2A221220355897DB094C7AAC8242E0BCE8AE6A4DB8B6C08B38BED3290EA3560A6515CC3B22240A14EFEE576F3D668674BC73E007F6ABFA243311BD37120C0A085468657461576569107B")
 
 	assert.Nil(err)
+	fmt.Printf("<<<<<< %X\n", txBytes)
 	assert.Equal(expectedTxBytes, txBytes)
+
+	assert.Equal(bytes.Compare(expectedTxBytes, txBytes), 0)
 
 }
 
@@ -156,7 +160,7 @@ func TestSend(t *testing.T) {
 	mockKeyManager.
 		On("FindByUserId", "alice").
 		Return(getRecord(), nil)
-	expectedTxBytes := "12c7010805120c0a0847616d6d6157656910041a8e010a142674ae64cb5206b2afc6b6fbd0e5a65c025b5016120c0a085468657461576569107b1801224212406c6dbdf253f520028743823c395cdb03dbf7ed399a8e6b251b5ac11d2ee1cb52c92380474884d281933288b7e7249954c8d595c94d85c19d9083c4307b811a062a221220355897db094c7aac8242e0bce8ae6a4db8b6c08b38bed3290ea3560a6515cc3b22240a14efee576f3d668674bc73e007f6abfa243311bd37120c0a085468657461576569107b"
+	expectedTxBytes := "12c7010805120c0a0847616d6d6157656910041a8e010a142674ae64cb5206b2afc6b6fbd0e5a65c025b5016120c0a085468657461576569107b180122421240efaacebb519466cc7f60598b5fe13e01b25c9bded5c33a60c0bbf61c4ae23fa8eb91de01d4fd3d1bdc88c29fdff33dff61b35769e4696f2c55789290b0d5420e2a221220355897db094c7aac8242e0bce8ae6a4db8b6c08b38bed3290ea3560a6515cc3b22240a14efee576f3d668674bc73e007f6abfa243311bd37120c0a085468657461576569107b"
 	resp := theta.BroadcastRawTransactionResult{&core_types.ResultBroadcastTxCommit{Height: 123}}
 	mockRPC.
 		On("Call", "theta.BroadcastRawTransaction", &theta.BroadcastRawTransactionArgs{TxBytes: expectedTxBytes}).

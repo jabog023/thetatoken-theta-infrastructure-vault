@@ -7,7 +7,6 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"github.com/tendermint/go-wire/data"
 	cmd "github.com/thetatoken/theta/cmd/thetacli/commands"
 	"github.com/thetatoken/theta/common"
 	theta "github.com/thetatoken/theta/rpc"
@@ -183,9 +182,9 @@ func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, re
 		Address:  address,
 	}
 
-	resourceIds := []data.Bytes{}
+	var resourceIds [][]byte
 	for _, ridStr := range args.ResourceIds {
-		resourceIds = append(resourceIds, data.Bytes(ridStr))
+		resourceIds = append(resourceIds, []byte(ridStr))
 	}
 
 	collateral := types.Coins{{

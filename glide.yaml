@@ -6,63 +6,19 @@ import:
 - package: github.com/spf13/cobra
 - package: github.com/spf13/pflag
 - package: github.com/spf13/viper
-- package: github.com/tendermint/abci
-  version: 4497bc6a2e141aea14a28ae714067f6f68e678ca
-  repo: git@github.com:slivertv/abci.git
-  vcs: git
-  subpackages:
-  - server
-  - types
-- package: github.com/tendermint/go-crypto
-  version: ~0.2.2
-  subpackages:
-  - cmd
-  - keys
-- package: github.com/tendermint/go-wire
-  version: ~0.6.2
-  subpackages:
-  - data
-- package: github.com/tendermint/light-client
-  version: ~0.10.3
-  subpackages:
-  - commands
-  - commands/proofs
-  - commands/seeds
-  - commands/txs
-  - proofs
-- package: github.com/tendermint/merkleeyes
-  version: ~0.2.4
-  subpackages:
-  - client
-  - iavl
-- package: github.com/tendermint/tendermint
-  version: 4f0b09b649aeda94f395ee9ef5238d0c440eb8d9
-  repo: git@github.com:slivertv/tendermint
-  vcs: git
-  subpackages:
-  - config
-  - node
-  - proxy
-  - rpc/client
-  - rpc/core/types
-  - rpc/lib/client
-  - rpc/lib/types
-  - types
-- package: github.com/tendermint/tmlibs
-  version: ~0.2.2
-  subpackages:
-  - cli
-  - cli/flags
-  - common
-  - events
-  - log
-  - logger
 - package: github.com/gorilla/mux
   version: ^1.6.1
 - package: github.com/ybbus/jsonrpc
   version: ^1.0.1
 - package: github.com/thetatoken/theta
   repo: git@github.com:slivertv/theta-blockchain-internal
+  subpackages:
+  - abci
+  - go-crypto
+  - go-wire
+  - merkleeyes
+  - tmlibs
+  - tendermint
 - package: github.com/aws/aws-sdk-go
   version: v1.13.32
   subpackages:

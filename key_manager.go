@@ -8,8 +8,8 @@ import (
 
 	_ "github.com/lib/pq"
 	log "github.com/sirupsen/logrus"
-	crypto "github.com/tendermint/go-crypto"
-	"github.com/tendermint/go-crypto/keys"
+	crypto "github.com/thetatoken/theta/go-crypto"
+	"github.com/thetatoken/theta/go-crypto/keys"
 	"github.com/thetatoken/theta/types"
 )
 
