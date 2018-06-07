@@ -105,6 +105,7 @@ func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.Br
 	}
 	send.SetChainID(viper.GetString("ChainID"))
 	send.AddSigner(record.PubKey)
+
 	txBytes, err := Sign(record.PubKey, record.PrivateKey, send)
 	if err != nil {
 		return
@@ -425,4 +426,126 @@ func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServ
 
 	err = resp.GetObject(&result)
 	return
+}
+
+// --------------------------- InstantiateSplitContract -------------------------------
+
+type InstantiateSplitContractArgs struct {
+	Fee          types.Coin `json:"fee"`          // Optional. Transaction fee. Default to 0.
+	Gas          int64      `json:"gas"`          // Optional. Amount of gas. Default to 0.
+	ResourceId   string     `json:"resource_id"`  // Required. The resourceId.
+	Initiator    string     `json:"initiator"`    // Required. Name of initiator account.
+	Participants []string   `json:"participants"` // Required. User IDs participating in the split.
+	Percentages  []uint     `json:"percentages"`  // Required. The split percentage for each corresponding user.
+	Duration     uint64     `json:"duration"`     // Optional. Number of blocks before the contract expires.
+	Sequence     int        `json:"sequence"`     // Optional. Sequence number of this transaction.
+}
+
+func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *InstantiateSplitContractArgs, result *theta.InstantiateSplitContractArgsResult) (err error) {
+	scope := r.Header.Get("X-Scope")
+	h.logger.WithFields(log.Fields{"scope": scope, "args": args}).Info("InstantiateSplitContract")
+	if scope != "sliver_internal" {
+		return errors.New("This API is sliver internal only")
+	}
+
+	if args.ResourceId == "" {
+		return errors.New("No resource_id is passed in")
+	}
+	if args.Initiator == "" {
+		return errors.New("No initiator is passed in")
+	}
+	if len(args.Participants) != len(args.Percentages) {
+		return errors.New("Length of participents doesn't match with length of percentages")
+	}
+
+	initiator, err := h.KeyManager.FindByUserId(args.Initiator)
+	if err != nil {
+		return
+	}
+	initiatorAddress, err := hex.DecodeString(initiator.Address)
+	if err != nil {
+		return
+	}
+
+	sequence, err := h.getSequence(initiator.Address)
+
+	initiatorInput := types.TxInput{
+		Address:  initiatorAddress,
+		Sequence: sequence + 1,
+	}
+
+	splits := []types.Split{}
+	for idx, userid := range args.Participants {
+		record, err := h.KeyManager.FindByUserId(userid)
+		if err != nil {
+			return err
+		}
+		address, err := hex.DecodeString(record.Address)
+		if err != nil {
+			return err
+		}
+
+		percentage := args.Percentages[idx]
+		splits = append(splits, types.Split{
+			Address:    address,
+			Percentage: percentage,
+		})
+	}
+
+	duration := uint64(86400 * 365 * 10)
+
+	tx := &types.SplitContractTx{
+		ResourceId: []byte(args.ResourceId),
+		Initiator:  initiatorInput,
+		Splits:     splits,
+		Duration:   duration,
+	}
+
+	// Wrap and add signer
+	splitContractTx := (&cmd.SplitContractTx{
+		Tx: tx,
+	})
+
+	splitContractTx.SetChainID(viper.GetString("ChainID"))
+	splitContractTx.AddSigner(initiator.PubKey)
+
+	txBytes, err := Sign(initiator.PubKey, initiator.PrivateKey, splitContractTx)
+	if err != nil {
+		return
+	}
+
+	broadcastArgs := &theta.BroadcastRawTransactionArgs{TxBytes: hex.EncodeToString(txBytes)}
+	resp, err := h.Client.Call("theta.BroadcastRawTransaction", broadcastArgs)
+
+	if err != nil {
+		return
+	}
+	if resp.Error != nil {
+		err = resp.Error
+		return
+	}
+
+	err = resp.GetObject(&result)
+	return
+}
+
+// ------------------ helpers ---------------------
+
+func (h *ThetaRPCHandler) getSequence(address string) (sequence int, err error) {
+	resp, err := h.Client.Call("theta.GetAccount", theta.GetAccountArgs{Address: address})
+	if err != nil {
+		h.logger.WithFields(log.Fields{"address": address, "error": err}).Error("Error in RPC call: theta.GetAccount()")
+		return
+	}
+	result := &theta.GetAccountResult{}
+	err = resp.GetObject(result)
+	if err != nil {
+		return
+	}
+	if result.Account == nil {
+		h.logger.WithFields(log.Fields{"address": address, "error": err}).Error("No result from RPC call: theta.GetAccount()")
+		err = errors.New("Error in getting account sequence number")
+		return 0, err
+	}
+	return result.Sequence, err
 }

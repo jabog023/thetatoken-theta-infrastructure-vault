@@ -47,7 +47,7 @@ func addInitalFund(address string) {
 	cmd := exec.Command("add_fund.sh", address, strconv.FormatInt(thetaAmount, 10), strconv.FormatInt(gammaAmount, 10))
 	err := cmd.Run()
 	if err != nil {
-		log.WithFields(log.Fields{"err": err, "output": string(err.(*exec.ExitError).Stderr)}).Error("Failed to add fund")
+		log.WithFields(log.Fields{"err": err, "output": err}).Error("Failed to add fund")
 	} else {
 		log.Info("Successfully added fund")
 	}
