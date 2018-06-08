@@ -16,7 +16,10 @@ import (
 	"github.com/spf13/viper"
 	"github.com/thetatoken/vault"
 	rpcc "github.com/ybbus/jsonrpc"
+	"golang.org/x/net/netutil"
 )
+
+const MaxConnections = 200
 
 var logger = log.WithFields(log.Fields{"component": "server"})
 
@@ -91,6 +94,7 @@ func startServer() {
 	defer l.Close()
 
 	logger.Info(fmt.Sprintf("Listening on %s\n", port))
+	l = netutil.LimitListener(l, MaxConnections)
 	logger.Fatal(http.Serve(l, r))
 	return
 }
