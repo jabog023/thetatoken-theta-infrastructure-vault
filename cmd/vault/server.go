@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"database/sql"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -12,14 +13,13 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/rpc/v2"
 	json "github.com/gorilla/rpc/v2/json2"
+	_ "github.com/lib/pq"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/thetatoken/vault"
 	rpcc "github.com/ybbus/jsonrpc"
 	"golang.org/x/net/netutil"
 )
-
-const MaxConnections = 200
 
 var logger = log.WithFields(log.Fields{"component": "server"})
 
@@ -67,12 +67,12 @@ func debugMiddleware(handler http.Handler) http.Handler {
 	})
 }
 
-func startServer() {
+func startServer(db *sql.DB) {
 	s := rpc.NewServer()
 	s.RegisterCodec(json.NewCodec(), "application/json")
 	s.RegisterCodec(json.NewCodec(), "application/json;charset=UTF-8")
 	client := rpcc.NewRPCClient("http://localhost:16888/rpc")
-	keyManager, err := vault.NewSqlKeyManager(viper.GetString("DbUser"), viper.GetString("DbPass"), viper.GetString("DbHost"), viper.GetString("DbName"))
+	keyManager, err := vault.NewSqlKeyManager(db)
 
 	if err != nil {
 		logger.Fatal(err)
@@ -94,9 +94,14 @@ func startServer() {
 	defer l.Close()
 
 	logger.Info(fmt.Sprintf("Listening on %s\n", port))
-	l = netutil.LimitListener(l, MaxConnections)
+	l = netutil.LimitListener(l, viper.GetInt("MaxConnections"))
 	logger.Fatal(http.Serve(l, r))
 	return
+}
+
+func startFaucet(db *sql.DB) {
+	f := vault.NewFaucetManager(db)
+	f.Process()
 }
 
 func readConfig() {
@@ -106,6 +111,9 @@ func readConfig() {
 	viper.SetDefault("Debug", false)
 	viper.SetDefault("PRCPort", "20000")
 	viper.SetDefault("ChainID", "test_chain_id")
+	viper.SetDefault("MaxConnections", 200)
+	viper.SetDefault("faucet.grants_per_batch", 100)
+	viper.SetDefault("faucet.sleep_between_batches_secs", 3600)
 
 	viper.SetConfigName("config")
 	viper.AddConfigPath(".")
@@ -122,8 +130,16 @@ func readConfig() {
 func main() {
 	readConfig()
 
-	go vault.Faucet.Process()
-	go startServer()
+	dbURL := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
+		viper.GetString("DbUser"), viper.GetString("DbPass"), viper.GetString("DbHost"), viper.GetString("DbName"))
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	defer db.Close()
+
+	go startFaucet(db)
+	go startServer(db)
 
 	select {}
 }

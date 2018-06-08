@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	_ "github.com/lib/pq"
 	log "github.com/sirupsen/logrus"
 	crypto "github.com/thetatoken/theta/go-crypto"
 	"github.com/thetatoken/theta/go-crypto/keys"
@@ -57,12 +56,7 @@ type SqlKeyManager struct {
 	db *sql.DB
 }
 
-func NewSqlKeyManager(user string, pass string, host string, dbname string) (*SqlKeyManager, error) {
-	db, err := sql.Open("postgres", fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", user, pass, host, dbname))
-
-	if err != nil {
-		return nil, err
-	}
+func NewSqlKeyManager(db *sql.DB) (*SqlKeyManager, error) {
 	return &SqlKeyManager{db}, nil
 }
 
@@ -91,9 +85,6 @@ func (km SqlKeyManager) FindByUserId(userid string) (Record, error) {
 			log.WithError(err).WithField("userid", userid).Error("Failed to create address")
 			return Record{}, err
 		}
-
-		Faucet.AddInitalFundAsync(address)
-
 		return record, nil
 	case err != nil:
 		log.Printf(err.Error())
@@ -114,9 +105,7 @@ func (km SqlKeyManager) FindByUserId(userid string) (Record, error) {
 	}
 }
 
-func (km SqlKeyManager) Close() {
-	km.db.Close()
-}
+func (km SqlKeyManager) Close() {}
 
 func (km SqlKeyManager) Create(record Record) error {
 	sm := fmt.Sprintf("INSERT INTO %s (userid, pubkey, privkey, address) VALUES ($1, DECODE($2, 'hex'), DECODE($3, 'hex'), DECODE($4, 'hex'))", TableName)
