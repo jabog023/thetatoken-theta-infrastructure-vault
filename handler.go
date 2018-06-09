@@ -2,9 +2,9 @@ package vault
 
 import (
 	"encoding/hex"
-	"errors"
 	"net/http"
 
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	cmd "github.com/thetatoken/theta/cmd/thetacli/commands"
@@ -20,14 +20,12 @@ type RPCClient interface {
 type ThetaRPCHandler struct {
 	Client     RPCClient
 	KeyManager KeyManager
-	logger     *log.Entry
 }
 
 func NewRPCHandler(client RPCClient, km KeyManager) *ThetaRPCHandler {
 	return &ThetaRPCHandler{
 		Client:     client,
 		KeyManager: km,
-		logger:     log.WithFields(log.Fields{"component": "handler"}),
 	}
 }
 
@@ -37,24 +35,20 @@ type GetAccountArgs struct{}
 
 func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, result *theta.GetAccountResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
-	h.logger.WithFields(log.Fields{"userid": userid, "args": args}).Info("GetAccount")
 	if userid == "" {
-		return errors.New("No userid is passed in.")
+		return errors.New("No userid is passed in")
 	}
 
 	record, err := h.KeyManager.FindByUserId(userid)
 	if err != nil {
-		h.logger.WithFields(log.Fields{"userid": userid, "args": args, "error": err}).Error("Error in KeyManager.FindByUserId()")
-		return
+		return errors.Wrapf(err, "Failed to find userid: %v", userid)
 	}
 	resp, err := h.Client.Call("theta.GetAccount", theta.GetAccountArgs{Address: record.Address})
 	if err != nil {
-		h.logger.WithFields(log.Fields{"userid": userid, "args": args, "error": err}).Error("Error in RPC call: theta.GetAccount()")
-		return
+		return errors.Wrap(err, "Error in RPC call")
 	}
 	err = resp.GetObject(result)
 	result.Address = record.Address
-	h.logger.WithFields(log.Fields{"result": result, "error": err}).Debug("Forwarding RPC call result")
 	return
 }
 
@@ -69,9 +63,8 @@ type SendArgs struct {
 
 func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.BroadcastRawTransactionResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
-	h.logger.WithFields(log.Fields{"userid": userid, "args": args}).Info("Send")
 	if userid == "" {
-		return errors.New("No userid is passed in.")
+		return errors.New("No userid is passed in")
 	}
 
 	record, err := h.KeyManager.FindByUserId(userid)
@@ -91,7 +84,7 @@ func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.Br
 
 	input.Address, err = hex.DecodeString(record.Address)
 	if err != nil {
-		return
+		return errors.Wrap(err, "Failed to decode address")
 	}
 	inputs := []types.TxInput{input}
 	tx := &types.SendTx{
@@ -108,12 +101,11 @@ func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.Br
 
 	txBytes, err := Sign(record.PubKey, record.PrivateKey, send)
 	if err != nil {
-		return
+		return errors.Wrap(err, "Failed to sign tx")
 	}
 
 	broadcastArgs := &theta.BroadcastRawTransactionArgs{TxBytes: hex.EncodeToString(txBytes)}
 	resp, err := h.Client.Call("theta.BroadcastRawTransaction", broadcastArgs)
-
 	if err != nil {
 		return
 	}
@@ -130,8 +122,6 @@ func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.Br
 
 func (h *ThetaRPCHandler) BroadcastRawTransaction(r *http.Request, args *theta.BroadcastRawTransactionArgs, result *theta.BroadcastRawTransactionResult) (err error) {
 	resp, err := h.Client.Call("theta.BroadcastRawTransaction", args)
-	h.logger.WithFields(log.Fields{"args": args}).Info("BroadcastRawTransaction")
-
 	if err != nil {
 		return
 	}
@@ -158,7 +148,6 @@ type ReserveFundArgs struct {
 
 func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, result *theta.ReserveFundResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
-	h.logger.WithFields(log.Fields{"userid": userid, "args": args}).Info("ReserveFund")
 	if userid == "" {
 		return errors.New("No userid is passed in.")
 	}
@@ -241,7 +230,6 @@ type ReleaseFundArgs struct {
 
 func (h *ThetaRPCHandler) ReleaseFund(r *http.Request, args *ReleaseFundArgs, result *theta.ReleaseFundResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
-	h.logger.WithFields(log.Fields{"userid": userid, "args": args}).Info("ReleaseFund")
 	if userid == "" {
 		return errors.New("No userid is passed in.")
 	}
@@ -304,7 +292,6 @@ type CreateServicePaymentArgs struct {
 
 func (h *ThetaRPCHandler) CreateServicePayment(r *http.Request, args *CreateServicePaymentArgs, result *theta.CreateServicePaymentResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
-	h.logger.WithFields(log.Fields{"userid": userid, "args": args}).Info("CreateServicePayment")
 	if userid == "" {
 		return errors.New("No userid is passed in.")
 	}
@@ -368,7 +355,6 @@ type SubmitServicePaymentArgs struct {
 
 func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServicePaymentArgs, result *theta.SubmitServicePaymentResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
-	h.logger.WithFields(log.Fields{"userid": userid, "args": args}).Info("SubmitServicePayment")
 	if userid == "" {
 		return errors.New("No userid is passed in.")
 	}
@@ -443,7 +429,6 @@ type InstantiateSplitContractArgs struct {
 
 func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *InstantiateSplitContractArgs, result *theta.InstantiateSplitContractArgsResult) (err error) {
 	scope := r.Header.Get("X-Scope")
-	h.logger.WithFields(log.Fields{"scope": scope, "args": args}).Info("InstantiateSplitContract")
 	if scope != "sliver_internal" {
 		return errors.New("This API is sliver internal only")
 	}
@@ -534,7 +519,7 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 func (h *ThetaRPCHandler) getSequence(address string) (sequence int, err error) {
 	resp, err := h.Client.Call("theta.GetAccount", theta.GetAccountArgs{Address: address})
 	if err != nil {
-		h.logger.WithFields(log.Fields{"address": address, "error": err}).Error("Error in RPC call: theta.GetAccount()")
+		log.WithFields(log.Fields{"address": address, "error": err}).Error("Error in RPC call: theta.GetAccount()")
 		return
 	}
 	result := &theta.GetAccountResult{}
@@ -543,7 +528,7 @@ func (h *ThetaRPCHandler) getSequence(address string) (sequence int, err error) 
 		return
 	}
 	if result.Account == nil {
-		h.logger.WithFields(log.Fields{"address": address, "error": err}).Error("No result from RPC call: theta.GetAccount()")
+		log.WithFields(log.Fields{"address": address, "error": err}).Error("No result from RPC call: theta.GetAccount()")
 		err = errors.New("Error in getting account sequence number")
 		return 0, err
 	}

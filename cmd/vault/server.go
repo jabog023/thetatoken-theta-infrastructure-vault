@@ -21,9 +21,9 @@ import (
 	"golang.org/x/net/netutil"
 )
 
-var logger = log.WithFields(log.Fields{"component": "server"})
-
 func decompressMiddleware(handler http.Handler) http.Handler {
+	logger := log.WithFields(log.Fields{"method": "rpc.handler.decompress"})
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.Header.Get("content-encoding"), "gzip") {
 			handler.ServeHTTP(w, r)
@@ -48,26 +48,9 @@ func decompressMiddleware(handler http.Handler) http.Handler {
 	})
 }
 
-func debugMiddleware(handler http.Handler) http.Handler {
-	if !viper.GetBool("Debug") {
-		return handler
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := ioutil.ReadAll(r.Body)
-		if err != nil {
-			logger.WithFields(log.Fields{"error": err}).Debug("Error reading body")
-			http.Error(w, "can't read body", http.StatusBadRequest)
-			return
-		}
-
-		logger.WithFields(log.Fields{"body": string(body), "headers": r.Header}).Debug("Request body")
-
-		r.Body = ioutil.NopCloser(bytes.NewBuffer(body))
-		handler.ServeHTTP(w, r)
-	})
-}
-
 func startServer(db *sql.DB) {
+	logger := log.WithFields(log.Fields{"method": "rpc.startServer"})
+
 	s := rpc.NewServer()
 	s.RegisterCodec(json.NewCodec(), "application/json")
 	s.RegisterCodec(json.NewCodec(), "application/json;charset=UTF-8")
@@ -82,7 +65,7 @@ func startServer(db *sql.DB) {
 	handler := vault.NewRPCHandler(client, keyManager)
 	s.RegisterService(handler, "theta")
 	r := mux.NewRouter()
-	r.Use(debugMiddleware)
+	r.Use(vault.LoggerMiddleware)
 	r.Use(decompressMiddleware)
 	r.Handle("/rpc", s)
 
@@ -105,6 +88,8 @@ func startFaucet(db *sql.DB) {
 }
 
 func readConfig() {
+	logger := log.WithFields(log.Fields{"method": "readConfig"})
+
 	viper.SetDefault("DbHost", "localhost")
 	viper.SetDefault("DbName", "sliver_video_serving")
 	viper.SetDefault("DbTableName", "user_theta_native_wallet")
@@ -129,13 +114,14 @@ func readConfig() {
 }
 
 func main() {
+	vault.SetupLogger()
 	readConfig()
 
 	dbURL := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
 		viper.GetString("DbUser"), viper.GetString("DbPass"), viper.GetString("DbHost"), viper.GetString("DbName"))
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
-		logger.Fatal(err)
+		log.WithFields(log.Fields{"error": err, "dbURL": dbURL}).Fatal("Failed to connect to database")
 	}
 	defer db.Close()
 
