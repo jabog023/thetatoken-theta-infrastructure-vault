@@ -114,6 +114,7 @@ func readConfig() {
 	viper.SetDefault("MaxConnections", 200)
 	viper.SetDefault("faucet.grants_per_batch", 100)
 	viper.SetDefault("faucet.sleep_between_batches_secs", 3600)
+	viper.SetDefault("faucet.sleep_between_wakeups_secs", 10)
 
 	viper.SetConfigName("config")
 	viper.AddConfigPath(".")

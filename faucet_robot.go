@@ -14,12 +14,14 @@ import (
 )
 
 type FaucetManager struct {
-	db *sql.DB
+	db                   *sql.DB
+	processedUserInBatch int
 }
 
 func NewFaucetManager(db *sql.DB) *FaucetManager {
 	return &FaucetManager{
-		db: db,
+		db:                   db,
+		processedUserInBatch: 0,
 	}
 }
 
@@ -27,31 +29,65 @@ func NewFaucetManager(db *sql.DB) *FaucetManager {
 func (fr *FaucetManager) Process() {
 	logger := log.WithFields(log.Fields{"method": "FaucetManager.Process"})
 
+	sleepBatch := viper.GetInt64("faucet.sleep_between_batches_secs")
+	sleepWakeup := viper.GetInt64("faucet.sleep_between_wakeups_secs")
+
+	resetTicker := time.NewTicker(time.Duration(sleepBatch) * time.Second)
+	wakeupTicker := time.NewTicker(time.Duration(sleepWakeup) * time.Second)
+	defer resetTicker.Stop()
+	defer wakeupTicker.Stop()
+
 	for {
-		logger.Infof("Trying to process %d faucet items", viper.GetInt("faucet.grants_per_batch"))
-		query := fmt.Sprintf("SELECT address::bytea, faucet_fund_claimed, created_at FROM %s WHERE faucet_fund_claimed=FALSE order by created_at limit %d", TableName, viper.GetInt("faucet.grants_per_batch"))
-		rows, err := fr.db.Query(query)
-		if err != nil {
-			logger.WithFields(log.Fields{"error": err}).Error("Failed to fetch users from database")
+		select {
+		case <-resetTicker.C:
+			logger.Info("Resetting batch count")
+			fr.processedUserInBatch = 0
+		case <-wakeupTicker.C:
+			fr.tryGrantFunds()
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var address []byte
-			var createdAt pq.NullTime
-			var faucetClaimed sql.NullBool
-			if err := rows.Scan(&address, &faucetClaimed, &createdAt); err != nil {
-				logger.WithFields(log.Fields{"error": err}).Error("Failed to parse results from database")
-			}
-			logger.WithFields(log.Fields{"address": hex.EncodeToString(address), "createAt": createdAt.Time, "faucetClaimed": faucetClaimed.Bool}).Info("Process faucet queue item")
-			fr.addInitalFund(hex.EncodeToString(address))
-		}
-		if err := rows.Err(); err != nil {
+	}
+}
+
+func (fr *FaucetManager) tryGrantFunds() {
+	logger := log.WithFields(log.Fields{"method": "FaucetManager.tryGrantFunds"})
+
+	grantsPerBatch := viper.GetInt("faucet.grants_per_batch")
+
+	if fr.processedUserInBatch >= grantsPerBatch {
+		logger.Infof("Batch cap %d reached. Not granting funds.", grantsPerBatch)
+		return
+	}
+	maxUsers := grantsPerBatch - fr.processedUserInBatch
+	logger.Infof("Ready to process %d users", maxUsers)
+
+	query := fmt.Sprintf("SELECT address::bytea, faucet_fund_claimed, created_at FROM %s WHERE faucet_fund_claimed=FALSE order by created_at limit %d", TableName, maxUsers)
+	rows, err := fr.db.Query(query)
+	if err != nil {
+		logger.WithFields(log.Fields{"error": err}).Error("Failed to fetch users from database")
+	}
+	defer rows.Close()
+
+	count, errCount := 0, 0
+	for rows.Next() {
+		var address []byte
+		var createdAt pq.NullTime
+		var faucetClaimed sql.NullBool
+		if err := rows.Scan(&address, &faucetClaimed, &createdAt); err != nil {
 			logger.WithFields(log.Fields{"error": err}).Error("Failed to parse results from database")
 		}
-
-		logger.Info("Batch done. Sleeping...")
-		time.Sleep(time.Duration(viper.GetInt64("faucet.sleep_between_batches_secs")) * time.Second)
+		logger.WithFields(log.Fields{"address": hex.EncodeToString(address), "createAt": createdAt.Time, "faucetClaimed": faucetClaimed.Bool}).Info("Process faucet queue item")
+		err := fr.addInitalFund(hex.EncodeToString(address))
+		if err != nil {
+			errCount++
+		}
+		count++
 	}
+	if err := rows.Err(); err != nil {
+		logger.WithFields(log.Fields{"error": err}).Error("Failed to parse results from database")
+	}
+
+	fr.processedUserInBatch += count
+	logger.Infof("Processed %d users with %d failures. Sleeping...", count, errCount)
 }
 
 func (fr *FaucetManager) addInitalFund(address string) error {
