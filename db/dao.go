@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/viper"
 	crypto "github.com/thetatoken/theta/go-crypto"
 	"github.com/thetatoken/theta/types"
+	"github.com/thetatoken/vault/util"
 )
 
 var ErrNoRecord = errors.New("DAO: no record in database")
@@ -21,10 +22,10 @@ type DAO struct {
 }
 
 func NewDAO() (*DAO, error) {
-	user := viper.GetString("DbUser")
-	pass := viper.GetString("DbPass")
-	host := viper.GetString("DbHost")
-	database := viper.GetString("DbName")
+	user := viper.GetString(util.CfgDbUser)
+	pass := viper.GetString(util.CfgDbPass)
+	host := viper.GetString(util.CfgDbHost)
+	database := viper.GetString(util.CfgDbDatabase)
 
 	dbURL := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", user, pass, host, database)
 	db, err := sql.Open("postgres", dbURL)
@@ -40,7 +41,7 @@ func (da *DAO) Close() {
 }
 
 func (da *DAO) FindByUserId(userid string) (Record, error) {
-	tableName := viper.GetString("DbTableName")
+	tableName := viper.GetString(util.CfgDbTable)
 
 	query := fmt.Sprintf("SELECT privkey::bytea, pubkey::bytea, address::bytea, faucet_fund_claimed, created_at FROM %s WHERE userid=$1", tableName)
 	row := da.db.QueryRow(query, userid)
@@ -73,7 +74,7 @@ func (da *DAO) FindByUserId(userid string) (Record, error) {
 }
 
 func (da *DAO) Create(record Record) error {
-	tableName := viper.GetString("DbTableName")
+	tableName := viper.GetString(util.CfgDbTable)
 
 	sm := fmt.Sprintf("INSERT INTO %s (userid, pubkey, privkey, address) VALUES ($1, DECODE($2, 'hex'), DECODE($3, 'hex'), DECODE($4, 'hex'))", tableName)
 
@@ -91,7 +92,7 @@ func (da *DAO) Create(record Record) error {
 }
 
 func (da *DAO) FindUnfundedUsers(limit int) ([]Record, error) {
-	tableName := viper.GetString("DbTableName")
+	tableName := viper.GetString(util.CfgDbTable)
 
 	query := fmt.Sprintf("SELECT userid, address::bytea, faucet_fund_claimed, created_at FROM %s WHERE faucet_fund_claimed=FALSE order by created_at limit %d", tableName, limit)
 	rows, err := da.db.Query(query)
@@ -123,7 +124,7 @@ func (da *DAO) FindUnfundedUsers(limit int) ([]Record, error) {
 }
 
 func (da *DAO) MarkUserFunded(address string) error {
-	tableName := viper.GetString("DbTableName")
+	tableName := viper.GetString(util.CfgDbTable)
 
 	sm := fmt.Sprintf("UPDATE %s SET faucet_fund_claimed=TRUE WHERE encode(address::bytea,'hex')=$1", tableName)
 	res, err := da.db.Exec(sm, address)

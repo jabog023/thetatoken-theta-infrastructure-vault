@@ -72,7 +72,7 @@ func startServer(da *db.DAO) {
 	r.Use(decompressMiddleware)
 	r.Handle("/rpc", s)
 
-	port := viper.GetString("RPCPort")
+	port := viper.GetString(util.CfgServerPort)
 	l, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		logger.Fatalf("Listen: %v", err)
@@ -80,7 +80,7 @@ func startServer(da *db.DAO) {
 	defer l.Close()
 
 	logger.Info(fmt.Sprintf("Listening on %s\n", port))
-	l = netutil.LimitListener(l, viper.GetInt("MaxConnections"))
+	l = netutil.LimitListener(l, viper.GetInt(util.CfgServerMaxConnections))
 	logger.Fatal(http.Serve(l, r))
 	return
 }

@@ -12,6 +12,7 @@ import (
 	theta "github.com/thetatoken/theta/rpc"
 	"github.com/thetatoken/theta/types"
 	"github.com/thetatoken/vault/keymanager"
+	"github.com/thetatoken/vault/util"
 	rpcc "github.com/ybbus/jsonrpc"
 )
 
@@ -97,7 +98,7 @@ func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.Br
 	send := &cmd.SendTx{
 		Tx: tx,
 	}
-	send.SetChainID(viper.GetString("ChainID"))
+	send.SetChainID(viper.GetString(util.CfgThetaChainId))
 	send.AddSigner(record.PubKey)
 
 	txBytes, err := keymanager.Sign(record.PubKey, record.PrivateKey, send)
@@ -194,7 +195,7 @@ func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, re
 	reserveTx := &cmd.ReserveFundTx{
 		Tx: tx,
 	}
-	reserveTx.SetChainID(viper.GetString("ChainID"))
+	reserveTx.SetChainID(viper.GetString(util.CfgThetaChainId))
 	reserveTx.AddSigner(record.PubKey)
 	txBytes, err := keymanager.Sign(record.PubKey, record.PrivateKey, reserveTx)
 	if err != nil {
@@ -260,7 +261,7 @@ func (h *ThetaRPCHandler) ReleaseFund(r *http.Request, args *ReleaseFundArgs, re
 	releaseTx := &cmd.ReleaseFundTx{
 		Tx: tx,
 	}
-	releaseTx.SetChainID(viper.GetString("ChainID"))
+	releaseTx.SetChainID(viper.GetString(util.CfgThetaChainId))
 	releaseTx.AddSigner(record.PubKey)
 	txBytes, err := keymanager.Sign(record.PubKey, record.PrivateKey, releaseTx)
 	if err != nil {
@@ -332,7 +333,7 @@ func (h *ThetaRPCHandler) CreateServicePayment(r *http.Request, args *CreateServ
 	paymentTxWrap := (&cmd.ServicePaymentTx{
 		Tx: tx,
 	}).SenderSignable()
-	paymentTxWrap.SetChainID(viper.GetString("ChainID"))
+	paymentTxWrap.SetChainID(viper.GetString(util.CfgThetaChainId))
 	paymentTxWrap.AddSigner(record.PubKey)
 
 	txBytes, err := keymanager.Sign(record.PubKey, record.PrivateKey, paymentTxWrap)
@@ -391,7 +392,7 @@ func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServ
 	paymentTxWrap := (&cmd.ServicePaymentTx{
 		Tx: paymentTx,
 	}).ReceiverSignable()
-	paymentTxWrap.SetChainID(viper.GetString("ChainID"))
+	paymentTxWrap.SetChainID(viper.GetString(util.CfgThetaChainId))
 	paymentTxWrap.AddSigner(record.PubKey)
 
 	// Sign the tx
@@ -492,7 +493,7 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 		Tx: tx,
 	})
 
-	splitContractTx.SetChainID(viper.GetString("ChainID"))
+	splitContractTx.SetChainID(viper.GetString(util.CfgThetaChainId))
 	splitContractTx.AddSigner(initiator.PubKey)
 
 	txBytes, err := keymanager.Sign(initiator.PubKey, initiator.PrivateKey, splitContractTx)

@@ -1,10 +1,18 @@
-DbHost: localhost
-DbName: test
-DbTableName: vault
-DbUser: admin
-DbPass: admin
-ChainID: test_chain_id
-RPCPort: 20000
-Debug: true
-InitialTheta: 10000000
-InitialGamma: 10000
+db.host: localhost
+db.database: test
+db.table: vault
+db.user: admin
+db.pass: admin
+
+theta.chain_id: test_chain_id
+
+server.port: 20000
+server.max_connections: 200
+
+debug: true
+
+faucet.theta: 10000000
+faucet.gamma: 10000
+faucet.grants_per_batch: 5
+faucet.sleep_between_batches_secs: 60
+faucet.sleep_between_wakeups_secs: 5

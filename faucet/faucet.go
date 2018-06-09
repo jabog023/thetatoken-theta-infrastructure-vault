@@ -8,6 +8,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/thetatoken/vault/db"
+	"github.com/thetatoken/vault/util"
 )
 
 type FaucetManager struct {
@@ -26,8 +27,8 @@ func NewFaucetManager(da *db.DAO) *FaucetManager {
 func (fr *FaucetManager) Process() {
 	logger := log.WithFields(log.Fields{"method": "FaucetManager.Process"})
 
-	sleepBatch := viper.GetInt64("faucet.sleep_between_batches_secs")
-	sleepWakeup := viper.GetInt64("faucet.sleep_between_wakeups_secs")
+	sleepBatch := viper.GetInt64(util.CfgFaucetBatchDuration)
+	sleepWakeup := viper.GetInt64(util.CfgFaucetWakeupInterval)
 
 	resetTicker := time.NewTicker(time.Duration(sleepBatch) * time.Second)
 	wakeupTicker := time.NewTicker(time.Duration(sleepWakeup) * time.Second)
@@ -48,7 +49,7 @@ func (fr *FaucetManager) Process() {
 func (fr *FaucetManager) tryGrantFunds() {
 	logger := log.WithFields(log.Fields{"method": "FaucetManager.tryGrantFunds"})
 
-	grantsPerBatch := viper.GetInt("faucet.grants_per_batch")
+	grantsPerBatch := viper.GetInt(util.CfgFaucetGrantsPerBatch)
 
 	if fr.processedUserInBatch >= grantsPerBatch {
 		logger.Infof("Batch cap %d reached. Not granting funds.", grantsPerBatch)
@@ -76,8 +77,8 @@ func (fr *FaucetManager) tryGrantFunds() {
 }
 
 func (fr *FaucetManager) addInitalFund(address string) error {
-	thetaAmount := viper.GetInt64("InitialTheta")
-	gammaAmount := viper.GetInt64("InitialGamma")
+	thetaAmount := viper.GetInt64(util.CfgFaucetThetaAmount)
+	gammaAmount := viper.GetInt64(util.CfgFaucetGammaAmount)
 
 	logger := log.WithFields(log.Fields{"method": "addInitalFund", "address": address, "theta": thetaAmount, "gamma": gammaAmount})
 
