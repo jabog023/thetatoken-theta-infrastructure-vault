@@ -1,4 +1,4 @@
-package vault
+package faucet
 
 import (
 	"database/sql"
@@ -52,6 +52,7 @@ func (fr *FaucetManager) tryGrantFunds() {
 	logger := log.WithFields(log.Fields{"method": "FaucetManager.tryGrantFunds"})
 
 	grantsPerBatch := viper.GetInt("faucet.grants_per_batch")
+	tableName := viper.GetString("DbTableName")
 
 	if fr.processedUserInBatch >= grantsPerBatch {
 		logger.Infof("Batch cap %d reached. Not granting funds.", grantsPerBatch)
@@ -60,7 +61,7 @@ func (fr *FaucetManager) tryGrantFunds() {
 	maxUsers := grantsPerBatch - fr.processedUserInBatch
 	logger.Infof("Ready to process %d users", maxUsers)
 
-	query := fmt.Sprintf("SELECT address::bytea, faucet_fund_claimed, created_at FROM %s WHERE faucet_fund_claimed=FALSE order by created_at limit %d", TableName, maxUsers)
+	query := fmt.Sprintf("SELECT address::bytea, faucet_fund_claimed, created_at FROM %s WHERE faucet_fund_claimed=FALSE order by created_at limit %d", tableName, maxUsers)
 	rows, err := fr.db.Query(query)
 	if err != nil {
 		logger.WithFields(log.Fields{"error": err}).Error("Failed to fetch users from database")
@@ -93,6 +94,7 @@ func (fr *FaucetManager) tryGrantFunds() {
 func (fr *FaucetManager) addInitalFund(address string) error {
 	thetaAmount := viper.GetInt64("InitialTheta")
 	gammaAmount := viper.GetInt64("InitialGamma")
+	tableName := viper.GetString("DbTableName")
 
 	logger := log.WithFields(log.Fields{"method": "addInitalFund", "address": address, "theta": thetaAmount, "gamma": gammaAmount})
 
@@ -100,7 +102,7 @@ func (fr *FaucetManager) addInitalFund(address string) error {
 		return nil
 	}
 
-	sm := fmt.Sprintf("UPDATE %s SET faucet_fund_claimed=TRUE WHERE encode(address::bytea,'hex')=$1", TableName)
+	sm := fmt.Sprintf("UPDATE %s SET faucet_fund_claimed=TRUE WHERE encode(address::bytea,'hex')=$1", tableName)
 	res, err := fr.db.Exec(sm, address)
 	if err != nil {
 		logger.WithFields(log.Fields{"err": err, "result": res}).Error("Failed to update database")

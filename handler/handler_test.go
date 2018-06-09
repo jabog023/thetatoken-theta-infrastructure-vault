@@ -1,4 +1,4 @@
-package vault
+package handler
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	theta "github.com/thetatoken/theta/rpc"
 	core_types "github.com/thetatoken/theta/tendermint/rpc/core/types"
 	"github.com/thetatoken/theta/types"
+	"github.com/thetatoken/vault/keymanager"
 	rpcc "github.com/ybbus/jsonrpc"
 
 	"github.com/stretchr/testify/assert"
@@ -21,7 +22,7 @@ import (
 
 var logger = log.WithFields(log.Fields{"component": "server"})
 
-func getRecord() Record {
+func getRecord() keymanager.Record {
 	pubKeyBytes, _ := hex.DecodeString("1220355897db094c7aac8242e0bce8ae6a4db8b6c08b38bed3290ea3560a6515cc3b")
 	privKeyBytes, _ := hex.DecodeString("12406f77b49c99cb22d63f84ffc7da54da0141b91f86627dda1c37a0bfe3eb1111e7355897db094c7aac8242e0bce8ae6a4db8b6c08b38bed3290ea3560a6515cc3b")
 	pubKey := crypto.PubKey{}
@@ -46,7 +47,7 @@ func TestGetAccount(t *testing.T) {
 	assert := assert.New(t)
 
 	var mockRPC *MockRPCClient
-	var mockKeyManager *MockKeyManager
+	var mockKeyManager *keymanager.MockKeyManager
 	var handler *ThetaRPCHandler
 	var args *GetAccountArgs
 	var result *theta.GetAccountResult
@@ -54,8 +55,8 @@ func TestGetAccount(t *testing.T) {
 
 	// Should return account successfully.
 	mockRPC = &MockRPCClient{}
-	mockKeyManager = &MockKeyManager{}
-	handler = &ThetaRPCHandler{mockRPC, mockKeyManager, logger}
+	mockKeyManager = &keymanager.MockKeyManager{}
+	handler = &ThetaRPCHandler{mockRPC, mockKeyManager}
 	mockKeyManager.
 		On("FindByUserId", "alice").
 		Return(getRecord(), nil)
@@ -72,8 +73,8 @@ func TestGetAccount(t *testing.T) {
 
 	// Should return error when RPC call fail
 	mockRPC = &MockRPCClient{}
-	mockKeyManager = &MockKeyManager{}
-	handler = &ThetaRPCHandler{mockRPC, mockKeyManager, logger}
+	mockKeyManager = &keymanager.MockKeyManager{}
+	handler = &ThetaRPCHandler{mockRPC, mockKeyManager}
 	mockKeyManager.
 		On("FindByUserId", "alice").
 		Return(getRecord(), nil)
@@ -88,11 +89,11 @@ func TestGetAccount(t *testing.T) {
 
 	// Should return error when key manager fail
 	mockRPC = &MockRPCClient{}
-	mockKeyManager = &MockKeyManager{}
-	handler = &ThetaRPCHandler{mockRPC, mockKeyManager, logger}
+	mockKeyManager = &keymanager.MockKeyManager{}
+	handler = &ThetaRPCHandler{mockRPC, mockKeyManager}
 	mockKeyManager.
 		On("FindByUserId", "alice").
-		Return(Record{}, errors.New("key manager error"))
+		Return(keymanager.Record{}, errors.New("key manager error"))
 	mockRPC.
 		On("Call", "theta.GetAccount", mock.Anything).
 		Return(&rpcc.RPCResponse{Result: &types.Account{Balance: types.Coins{{Amount: 123}}}}, nil)
@@ -130,7 +131,7 @@ func TestSign(t *testing.T) {
 	}
 	sendTx.SetChainID("test_chain_id")
 	sendTx.AddSigner(record.PubKey)
-	txBytes, err := Sign(record.PubKey, record.PrivateKey, sendTx)
+	txBytes, err := keymanager.Sign(record.PubKey, record.PrivateKey, sendTx)
 
 	expectedTxBytes, _ := hex.DecodeString("12C7010805120C0A0847616D6D6157656910041A8E010A142674AE64CB5206B2AFC6B6FBD0E5A65C025B5016120C0A085468657461576569107B18012242124043F1E91C42DF3235A2849C886716A1749B3C563FC62BD38AF647CC716730DB32DCEA959C263C6A74CDC79DEA289D2DEA0A83C063230748391EA32C79EBE6300B2A221220355897DB094C7AAC8242E0BCE8AE6A4DB8B6C08B38BED3290EA3560A6515CC3B22240A14EFEE576F3D668674BC73E007F6ABFA243311BD37120C0A085468657461576569107B")
 
@@ -145,7 +146,7 @@ func TestSend(t *testing.T) {
 	assert := assert.New(t)
 
 	var mockRPC *MockRPCClient
-	var mockKeyManager *MockKeyManager
+	var mockKeyManager *keymanager.MockKeyManager
 	var handler *ThetaRPCHandler
 	var args *SendArgs
 	var result *theta.BroadcastRawTransactionResult
@@ -153,8 +154,8 @@ func TestSend(t *testing.T) {
 
 	// Should send successfully.
 	mockRPC = &MockRPCClient{}
-	mockKeyManager = &MockKeyManager{}
-	handler = &ThetaRPCHandler{mockRPC, mockKeyManager, logger}
+	mockKeyManager = &keymanager.MockKeyManager{}
+	handler = &ThetaRPCHandler{mockRPC, mockKeyManager}
 	mockKeyManager.
 		On("FindByUserId", "alice").
 		Return(getRecord(), nil)
@@ -184,8 +185,8 @@ func TestSend(t *testing.T) {
 
 	// Should pass the error if RPC calls has error.
 	mockRPC = &MockRPCClient{}
-	mockKeyManager = &MockKeyManager{}
-	handler = &ThetaRPCHandler{mockRPC, mockKeyManager, logger}
+	mockKeyManager = &keymanager.MockKeyManager{}
+	handler = &ThetaRPCHandler{mockRPC, mockKeyManager}
 	mockKeyManager.
 		On("FindByUserId", "alice").
 		Return(getRecord(), nil)

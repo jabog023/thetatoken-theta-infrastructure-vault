@@ -1,4 +1,4 @@
-package vault
+package keymanager
 
 import (
 	"database/sql"
@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/viper"
 	crypto "github.com/thetatoken/theta/go-crypto"
 	"github.com/thetatoken/theta/go-crypto/keys"
 	"github.com/thetatoken/theta/types"
@@ -50,8 +51,6 @@ func genKey() (address string, pubkey crypto.PubKey, privKey crypto.PrivKey, see
 
 var _ KeyManager = SqlKeyManager{}
 
-const TableName = "user_theta_native_wallet"
-
 type SqlKeyManager struct {
 	db *sql.DB
 }
@@ -61,7 +60,8 @@ func NewSqlKeyManager(db *sql.DB) (*SqlKeyManager, error) {
 }
 
 func (km SqlKeyManager) FindByUserId(userid string) (Record, error) {
-	query := fmt.Sprintf("SELECT privkey::bytea, pubkey::bytea, address::bytea FROM %s WHERE userid=$1", TableName)
+	tableName := viper.GetString("DbTableName")
+	query := fmt.Sprintf("SELECT privkey::bytea, pubkey::bytea, address::bytea FROM %s WHERE userid=$1", tableName)
 	row := km.db.QueryRow(query, userid)
 
 	var privkeyBytes, pubkeyBytes, address []byte
@@ -108,7 +108,9 @@ func (km SqlKeyManager) FindByUserId(userid string) (Record, error) {
 func (km SqlKeyManager) Close() {}
 
 func (km SqlKeyManager) Create(record Record) error {
-	sm := fmt.Sprintf("INSERT INTO %s (userid, pubkey, privkey, address) VALUES ($1, DECODE($2, 'hex'), DECODE($3, 'hex'), DECODE($4, 'hex'))", TableName)
+	tableName := viper.GetString("DbTableName")
+
+	sm := fmt.Sprintf("INSERT INTO %s (userid, pubkey, privkey, address) VALUES ($1, DECODE($2, 'hex'), DECODE($3, 'hex'), DECODE($4, 'hex'))", tableName)
 
 	pubkeyBytes, err := types.ToBytes(&record.PubKey)
 	if err != nil {

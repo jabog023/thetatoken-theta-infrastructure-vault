@@ -23,8 +23,8 @@ tools:
 
 gen_mocks:
 	# go get github.com/vektra/mockery/.../
-	mockery -name KeyManager -case=underscore -inpkg
-	mockery -name RPCClient -case=underscore -inpkg
+	mockery -dir=keymanager -name KeyManager -case=underscore -inpkg
+	mockery -dir=handler -name RPCClient -case=underscore -inpkg
 
 clean:
 	# maybe cleaning up cache and vendor is overkill, but sometimes

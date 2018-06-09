@@ -16,7 +16,10 @@ import (
 	_ "github.com/lib/pq"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	"github.com/thetatoken/vault"
+	"github.com/thetatoken/vault/faucet"
+	"github.com/thetatoken/vault/handler"
+	"github.com/thetatoken/vault/keymanager"
+	"github.com/thetatoken/vault/util"
 	rpcc "github.com/ybbus/jsonrpc"
 	"golang.org/x/net/netutil"
 )
@@ -55,17 +58,17 @@ func startServer(db *sql.DB) {
 	s.RegisterCodec(json.NewCodec(), "application/json")
 	s.RegisterCodec(json.NewCodec(), "application/json;charset=UTF-8")
 	client := rpcc.NewRPCClient("http://localhost:16888/rpc")
-	keyManager, err := vault.NewSqlKeyManager(db)
+	keyManager, err := keymanager.NewSqlKeyManager(db)
 
 	if err != nil {
 		logger.Fatal(err)
 	}
 	defer keyManager.Close()
 
-	handler := vault.NewRPCHandler(client, keyManager)
+	handler := handler.NewRPCHandler(client, keyManager)
 	s.RegisterService(handler, "theta")
 	r := mux.NewRouter()
-	r.Use(vault.LoggerMiddleware)
+	r.Use(util.LoggerMiddleware)
 	r.Use(decompressMiddleware)
 	r.Handle("/rpc", s)
 
@@ -83,39 +86,13 @@ func startServer(db *sql.DB) {
 }
 
 func startFaucet(db *sql.DB) {
-	f := vault.NewFaucetManager(db)
+	f := faucet.NewFaucetManager(db)
 	f.Process()
 }
 
-func readConfig() {
-	logger := log.WithFields(log.Fields{"method": "readConfig"})
-
-	viper.SetDefault("DbHost", "localhost")
-	viper.SetDefault("DbName", "sliver_video_serving")
-	viper.SetDefault("DbTableName", "user_theta_native_wallet")
-	viper.SetDefault("Debug", false)
-	viper.SetDefault("PRCPort", "20000")
-	viper.SetDefault("ChainID", "test_chain_id")
-	viper.SetDefault("MaxConnections", 200)
-	viper.SetDefault("faucet.grants_per_batch", 100)
-	viper.SetDefault("faucet.sleep_between_batches_secs", 3600)
-	viper.SetDefault("faucet.sleep_between_wakeups_secs", 10)
-
-	viper.SetConfigName("config")
-	viper.AddConfigPath(".")
-	err := viper.ReadInConfig()
-	if err != nil {
-		logger.WithFields(log.Fields{"error": err}).Fatal(fmt.Errorf("Fatal error config file"))
-	}
-
-	if viper.GetBool("Debug") {
-		log.SetLevel(log.DebugLevel)
-	}
-}
-
 func main() {
-	vault.SetupLogger()
-	readConfig()
+	util.SetupLogger()
+	util.ReadConfig()
 
 	dbURL := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
 		viper.GetString("DbUser"), viper.GetString("DbPass"), viper.GetString("DbHost"), viper.GetString("DbName"))
