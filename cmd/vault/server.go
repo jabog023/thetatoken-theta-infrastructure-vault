@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
-	"database/sql"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -16,6 +15,7 @@ import (
 	_ "github.com/lib/pq"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"github.com/thetatoken/vault/db"
 	"github.com/thetatoken/vault/faucet"
 	"github.com/thetatoken/vault/handler"
 	"github.com/thetatoken/vault/keymanager"
@@ -51,14 +51,14 @@ func decompressMiddleware(handler http.Handler) http.Handler {
 	})
 }
 
-func startServer(db *sql.DB) {
+func startServer(da *db.DAO) {
 	logger := log.WithFields(log.Fields{"method": "rpc.startServer"})
 
 	s := rpc.NewServer()
 	s.RegisterCodec(json.NewCodec(), "application/json")
 	s.RegisterCodec(json.NewCodec(), "application/json;charset=UTF-8")
 	client := rpcc.NewRPCClient("http://localhost:16888/rpc")
-	keyManager, err := keymanager.NewSqlKeyManager(db)
+	keyManager, err := keymanager.NewSqlKeyManager(da)
 
 	if err != nil {
 		logger.Fatal(err)
@@ -85,8 +85,8 @@ func startServer(db *sql.DB) {
 	return
 }
 
-func startFaucet(db *sql.DB) {
-	f := faucet.NewFaucetManager(db)
+func startFaucet(da *db.DAO) {
+	f := faucet.NewFaucetManager(da)
 	f.Process()
 }
 
@@ -94,16 +94,14 @@ func main() {
 	util.SetupLogger()
 	util.ReadConfig()
 
-	dbURL := fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable",
-		viper.GetString("DbUser"), viper.GetString("DbPass"), viper.GetString("DbHost"), viper.GetString("DbName"))
-	db, err := sql.Open("postgres", dbURL)
+	da, err := db.NewDAO()
 	if err != nil {
-		log.WithFields(log.Fields{"error": err, "dbURL": dbURL}).Fatal("Failed to connect to database")
+		log.Fatal(err)
 	}
-	defer db.Close()
+	defer da.Close()
 
-	go startFaucet(db)
-	go startServer(db)
+	go startFaucet(da)
+	go startServer(da)
 
 	select {}
 }

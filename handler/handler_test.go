@@ -13,6 +13,7 @@ import (
 	theta "github.com/thetatoken/theta/rpc"
 	core_types "github.com/thetatoken/theta/tendermint/rpc/core/types"
 	"github.com/thetatoken/theta/types"
+	"github.com/thetatoken/vault/db"
 	"github.com/thetatoken/vault/keymanager"
 	rpcc "github.com/ybbus/jsonrpc"
 
@@ -22,14 +23,14 @@ import (
 
 var logger = log.WithFields(log.Fields{"component": "server"})
 
-func getRecord() keymanager.Record {
+func getRecord() db.Record {
 	pubKeyBytes, _ := hex.DecodeString("1220355897db094c7aac8242e0bce8ae6a4db8b6c08b38bed3290ea3560a6515cc3b")
 	privKeyBytes, _ := hex.DecodeString("12406f77b49c99cb22d63f84ffc7da54da0141b91f86627dda1c37a0bfe3eb1111e7355897db094c7aac8242e0bce8ae6a4db8b6c08b38bed3290ea3560a6515cc3b")
 	pubKey := crypto.PubKey{}
 	types.FromBytes(pubKeyBytes, &pubKey)
 	privKey := crypto.PrivKey{}
 	types.FromBytes(privKeyBytes, &privKey)
-	return Record{
+	return db.Record{
 		UserID:     "alice",
 		Type:       "ed25519",
 		Address:    "2674ae64cb5206b2afc6b6fbd0e5a65c025b5016",
@@ -93,7 +94,7 @@ func TestGetAccount(t *testing.T) {
 	handler = &ThetaRPCHandler{mockRPC, mockKeyManager}
 	mockKeyManager.
 		On("FindByUserId", "alice").
-		Return(keymanager.Record{}, errors.New("key manager error"))
+		Return(db.Record{}, errors.New("key manager error"))
 	mockRPC.
 		On("Call", "theta.GetAccount", mock.Anything).
 		Return(&rpcc.RPCResponse{Result: &types.Account{Balance: types.Coins{{Amount: 123}}}}, nil)

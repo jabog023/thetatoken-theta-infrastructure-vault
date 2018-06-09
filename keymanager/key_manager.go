@@ -1,31 +1,19 @@
 package keymanager
 
 import (
-	"database/sql"
 	"encoding/hex"
-	"fmt"
 	"strings"
 
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/viper"
 	crypto "github.com/thetatoken/theta/go-crypto"
 	"github.com/thetatoken/theta/go-crypto/keys"
-	"github.com/thetatoken/theta/types"
+	"github.com/thetatoken/vault/db"
 )
-
-type Record struct {
-	UserID     string
-	Address    string
-	PubKey     crypto.PubKey
-	PrivateKey crypto.PrivKey
-	Type       string
-}
 
 type KeyManager interface {
 	Close()
-	FindByUserId(userid string) (Record, error)
-	// FindByAddress(address string) (Record, error)
-	Create(r Record) error
+	FindByUserId(userid string) (db.Record, error)
 }
 
 func Sign(pubKey crypto.PubKey, privKey crypto.PrivKey, tx keys.Signable) ([]byte, error) {
@@ -52,75 +40,42 @@ func genKey() (address string, pubkey crypto.PubKey, privKey crypto.PrivKey, see
 var _ KeyManager = SqlKeyManager{}
 
 type SqlKeyManager struct {
-	db *sql.DB
+	da *db.DAO
 }
 
-func NewSqlKeyManager(db *sql.DB) (*SqlKeyManager, error) {
-	return &SqlKeyManager{db}, nil
+func NewSqlKeyManager(da *db.DAO) (*SqlKeyManager, error) {
+	return &SqlKeyManager{da}, nil
 }
 
-func (km SqlKeyManager) FindByUserId(userid string) (Record, error) {
-	tableName := viper.GetString("DbTableName")
-	query := fmt.Sprintf("SELECT privkey::bytea, pubkey::bytea, address::bytea FROM %s WHERE userid=$1", tableName)
-	row := km.db.QueryRow(query, userid)
+func (km SqlKeyManager) FindByUserId(userid string) (db.Record, error) {
+	record, err := km.da.FindByUserId(userid)
 
-	var privkeyBytes, pubkeyBytes, address []byte
-	err := row.Scan(&privkeyBytes, &pubkeyBytes, &address)
-	switch {
-	case err == sql.ErrNoRows:
+	if err == db.ErrNoRecord {
 		log.Printf("No record with user ID: %s. Creating keys.", userid)
-
 		address, pubkey, privkey, _, err := genKey()
 		if err != nil {
-			return Record{}, err
+			return db.Record{}, err
 		}
-		record := Record{
+		record := db.Record{
 			Address:    address,
 			PubKey:     pubkey,
 			PrivateKey: privkey,
 			UserID:     userid,
 		}
-		err = km.Create(record)
+		err = km.da.Create(record)
 		if err != nil {
 			log.WithError(err).WithField("userid", userid).Error("Failed to create address")
-			return Record{}, err
-		}
-		return record, nil
-	case err != nil:
-		log.Printf(err.Error())
-		return Record{}, err
-	default:
-		pubKey := crypto.PubKey{}
-		types.FromBytes(pubkeyBytes, &pubKey)
-		privKey := crypto.PrivKey{}
-		types.FromBytes(privkeyBytes, &privKey)
-
-		record := Record{
-			UserID:     userid,
-			PubKey:     pubKey,
-			PrivateKey: privKey,
-			Address:    hex.EncodeToString(address),
+			return db.Record{}, err
 		}
 		return record, nil
 	}
+
+	if err != nil {
+		log.Printf(err.Error())
+		return db.Record{}, errors.Wrap(err, "Failed to find user by id")
+	}
+
+	return record, nil
 }
 
 func (km SqlKeyManager) Close() {}
-
-func (km SqlKeyManager) Create(record Record) error {
-	tableName := viper.GetString("DbTableName")
-
-	sm := fmt.Sprintf("INSERT INTO %s (userid, pubkey, privkey, address) VALUES ($1, DECODE($2, 'hex'), DECODE($3, 'hex'), DECODE($4, 'hex'))", tableName)
-
-	pubkeyBytes, err := types.ToBytes(&record.PubKey)
-	if err != nil {
-		return err
-	}
-	privBytes, err := types.ToBytes(&record.PrivateKey)
-	if err != nil {
-		return err
-	}
-
-	_, err = km.db.Exec(sm, record.UserID, hex.EncodeToString(pubkeyBytes), hex.EncodeToString(privBytes), record.Address)
-	return err
-}
