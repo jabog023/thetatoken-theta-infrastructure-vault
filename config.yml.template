@@ -5,6 +5,7 @@ db.user: admin
 db.pass: admin
 
 theta.chain_id: test_chain_id
+theta.rpc_endpoint: http://localhost:16888/rpc
 
 server.port: 20000
 server.max_connections: 200

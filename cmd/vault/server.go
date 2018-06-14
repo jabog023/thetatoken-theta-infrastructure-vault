@@ -57,7 +57,8 @@ func startServer(da *db.DAO) {
 	s := rpc.NewServer()
 	s.RegisterCodec(json.NewCodec(), "application/json")
 	s.RegisterCodec(json.NewCodec(), "application/json;charset=UTF-8")
-	client := rpcc.NewRPCClient("http://localhost:16888/rpc")
+	client := rpcc.NewRPCClient(viper.GetString(util.CfgThetaRPCEndpoint))
+
 	keyManager, err := keymanager.NewSqlKeyManager(da)
 
 	if err != nil {

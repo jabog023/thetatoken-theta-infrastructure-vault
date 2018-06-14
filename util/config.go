@@ -17,6 +17,7 @@ const (
 	CfgServerPort           = "server.port"
 	CfgServerMaxConnections = "server.max_connections"
 	CfgThetaChainId         = "theta.chain_id"
+	CfgThetaRPCEndpoint     = "theta.rpc_endpoint"
 	CfgFaucetGrantsPerBatch = "faucet.grants_per_batch"
 	CfgFaucetBatchDuration  = "faucet.sleep_between_batches_secs"
 	CfgFaucetWakeupInterval = "faucet.sleep_between_wakeups_secs"
