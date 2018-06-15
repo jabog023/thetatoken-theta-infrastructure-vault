@@ -74,6 +74,14 @@ func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.Br
 		return
 	}
 
+	// Add minimal gas/fee.
+	if args.Gas == 0 {
+		args.Gas = 1
+	}
+	if args.Fee.Amount == 0 {
+		args.Fee = types.Coin{Denom: "GammaWei", Amount: 1}
+	}
+
 	// Wrap and add signer
 	total := types.Coins{}
 	for _, out := range args.To {
@@ -162,6 +170,13 @@ func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, re
 	if args.Duration == 0 {
 		args.Duration = common.MaximumFundReserveDuration
 	}
+	// Add minimal gas/fee.
+	if args.Gas == 0 {
+		args.Gas = 1
+	}
+	if args.Fee.Amount == 0 {
+		args.Fee = types.Coin{Denom: "GammaWei", Amount: 1}
+	}
 
 	// Wrap and add signer
 	address, err := hex.DecodeString(record.Address)
@@ -244,6 +259,14 @@ func (h *ThetaRPCHandler) ReleaseFund(r *http.Request, args *ReleaseFundArgs, re
 	address, err := hex.DecodeString(record.Address)
 	if err != nil {
 		return
+	}
+
+	// Add minimal gas/fee.
+	if args.Gas == 0 {
+		args.Gas = 1
+	}
+	if args.Fee.Amount == 0 {
+		args.Fee = types.Coin{Denom: "GammaWei", Amount: 1}
 	}
 
 	// Wrap and add signer
@@ -389,6 +412,14 @@ func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServ
 	paymentTx := tx.(*types.ServicePaymentTx)
 	paymentTx.Target = input
 
+	// Add minimal gas/fee.
+	if paymentTx.Gas == 0 {
+		paymentTx.Gas = 1
+	}
+	if paymentTx.Fee.Amount == 0 {
+		paymentTx.Fee = types.Coin{Denom: "GammaWei", Amount: 1}
+	}
+
 	paymentTxWrap := (&cmd.ServicePaymentTx{
 		Tx: paymentTx,
 	}).ReceiverSignable()
@@ -443,6 +474,13 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 	}
 	if len(args.Participants) != len(args.Percentages) {
 		return errors.New("Length of participents doesn't match with length of percentages")
+	}
+	// Add minimal gas/fee.
+	if args.Gas == 0 {
+		args.Gas = 1
+	}
+	if args.Fee.Amount == 0 {
+		args.Fee = types.Coin{Denom: "GammaWei", Amount: 1}
 	}
 
 	initiator, err := h.KeyManager.FindByUserId(args.Initiator)
