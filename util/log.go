@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io/ioutil"
 	"net/http"
-	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -24,7 +23,7 @@ func SetupLogger() {
 
 type httpLogWriter struct {
 	http.ResponseWriter
-	B *strings.Builder
+	B *bytes.Buffer
 }
 
 func (w httpLogWriter) Write(b []byte) (int, error) {
@@ -48,7 +47,7 @@ func LoggerMiddleware(handler http.Handler) http.Handler {
 
 		r.Body = ioutil.NopCloser(bytes.NewBuffer(body))
 
-		lw := httpLogWriter{ResponseWriter: w, B: &strings.Builder{}}
+		lw := httpLogWriter{ResponseWriter: w, B: &bytes.Buffer{}}
 		handler.ServeHTTP(lw, r)
 
 		elapsed := time.Since(start)
