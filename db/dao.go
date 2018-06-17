@@ -43,29 +43,37 @@ func (da *DAO) Close() {
 func (da *DAO) FindByUserId(userid string) (Record, error) {
 	tableName := viper.GetString(util.CfgDbTable)
 
-	query := fmt.Sprintf("SELECT privkey::bytea, pubkey::bytea, address::bytea, faucet_fund_claimed, created_at FROM %s WHERE userid=$1", tableName)
+	query := fmt.Sprintf("SELECT ra_privkey::bytea, ra_pubkey::bytea, ra_address::bytea, sa_privkey::bytea, sa_pubkey::bytea, sa_address::bytea, faucet_fund_claimed, created_at FROM %s WHERE userid=$1", tableName)
 	row := da.db.QueryRow(query, userid)
 
-	var privkeyBytes, pubkeyBytes, address []byte
+	var raPrivkeyBytes, raPubkeyBytes, raAddress []byte
+	var saPrivkeyBytes, saPubkeyBytes, saAddress []byte
 	var faucetFunded sql.NullBool
 	var createAt pq.NullTime
-	err := row.Scan(&privkeyBytes, &pubkeyBytes, &address, &faucetFunded, &createAt)
+	err := row.Scan(&raPrivkeyBytes, &raPubkeyBytes, &raAddress, &saPrivkeyBytes, &saPubkeyBytes, &saAddress, &faucetFunded, &createAt)
 	switch {
 	case err == sql.ErrNoRows:
 		return Record{}, ErrNoRecord
 	case err != nil:
 		return Record{}, err
 	default:
-		pubKey := crypto.PubKey{}
-		types.FromBytes(pubkeyBytes, &pubKey)
-		privKey := crypto.PrivKey{}
-		types.FromBytes(privkeyBytes, &privKey)
+		raPubKey := crypto.PubKey{}
+		types.FromBytes(raPubkeyBytes, &raPubKey)
+		raPrivKey := crypto.PrivKey{}
+		types.FromBytes(raPrivkeyBytes, &raPrivKey)
+		saPubKey := crypto.PubKey{}
+		types.FromBytes(saPubkeyBytes, &saPubKey)
+		saPrivKey := crypto.PrivKey{}
+		types.FromBytes(saPrivkeyBytes, &saPrivKey)
 
 		record := Record{
 			UserID:       userid,
-			PubKey:       pubKey,
-			PrivateKey:   privKey,
-			Address:      hex.EncodeToString(address),
+			RaPubKey:     raPubKey,
+			RaPrivateKey: raPrivKey,
+			RaAddress:    hex.EncodeToString(raAddress),
+			SaPubKey:     saPubKey,
+			SaPrivateKey: saPrivKey,
+			SaAddress:    hex.EncodeToString(saAddress),
 			CreatedAt:    createAt.Time,
 			FaucetFunded: faucetFunded.Bool,
 		}
@@ -76,25 +84,33 @@ func (da *DAO) FindByUserId(userid string) (Record, error) {
 func (da *DAO) Create(record Record) error {
 	tableName := viper.GetString(util.CfgDbTable)
 
-	sm := fmt.Sprintf("INSERT INTO %s (userid, pubkey, privkey, address) VALUES ($1, DECODE($2, 'hex'), DECODE($3, 'hex'), DECODE($4, 'hex'))", tableName)
+	sm := fmt.Sprintf("INSERT INTO %s (userid, ra_pubkey, ra_privkey, ra_address, sa_pubkey, sa_privkey, sa_address) VALUES ($1, DECODE($2, 'hex'), DECODE($3, 'hex'), DECODE($4, 'hex'), DECODE($5, 'hex'), DECODE($6, 'hex'), DECODE($7, 'hex'))", tableName)
 
-	pubkeyBytes, err := types.ToBytes(&record.PubKey)
+	raPubkeyBytes, err := types.ToBytes(&record.RaPubKey)
 	if err != nil {
 		return err
 	}
-	privBytes, err := types.ToBytes(&record.PrivateKey)
+	raPrivBytes, err := types.ToBytes(&record.RaPrivateKey)
+	if err != nil {
+		return err
+	}
+	saPubkeyBytes, err := types.ToBytes(&record.SaPubKey)
+	if err != nil {
+		return err
+	}
+	saPrivBytes, err := types.ToBytes(&record.SaPrivateKey)
 	if err != nil {
 		return err
 	}
 
-	_, err = da.db.Exec(sm, record.UserID, hex.EncodeToString(pubkeyBytes), hex.EncodeToString(privBytes), record.Address)
+	_, err = da.db.Exec(sm, record.UserID, hex.EncodeToString(raPubkeyBytes), hex.EncodeToString(raPrivBytes), record.RaAddress, hex.EncodeToString(saPubkeyBytes), hex.EncodeToString(saPrivBytes), record.SaAddress)
 	return err
 }
 
 func (da *DAO) FindUnfundedUsers(limit int) ([]Record, error) {
 	tableName := viper.GetString(util.CfgDbTable)
 
-	query := fmt.Sprintf("SELECT userid, address::bytea, faucet_fund_claimed, created_at FROM %s WHERE faucet_fund_claimed=FALSE order by created_at limit %d", tableName, limit)
+	query := fmt.Sprintf("SELECT userid, sa_address::bytea, faucet_fund_claimed, created_at FROM %s WHERE faucet_fund_claimed=FALSE order by created_at limit %d", tableName, limit)
 	rows, err := da.db.Query(query)
 	if err != nil {
 		return nil, err
@@ -104,15 +120,15 @@ func (da *DAO) FindUnfundedUsers(limit int) ([]Record, error) {
 	var records []Record
 	for rows.Next() {
 		var userid string
-		var address []byte
+		var saAddress []byte
 		var createdAt pq.NullTime
 		var faucetClaimed sql.NullBool
-		if err := rows.Scan(&userid, &address, &faucetClaimed, &createdAt); err != nil {
+		if err := rows.Scan(&userid, &saAddress, &faucetClaimed, &createdAt); err != nil {
 			return records, errors.Wrap(err, "Failed to parse results from database")
 		}
 		records = append(records, Record{
 			UserID:       userid,
-			Address:      hex.EncodeToString(address),
+			SaAddress:    hex.EncodeToString(saAddress),
 			CreatedAt:    createdAt.Time,
 			FaucetFunded: faucetClaimed.Bool,
 		})
@@ -126,7 +142,7 @@ func (da *DAO) FindUnfundedUsers(limit int) ([]Record, error) {
 func (da *DAO) MarkUserFunded(address string) error {
 	tableName := viper.GetString(util.CfgDbTable)
 
-	sm := fmt.Sprintf("UPDATE %s SET faucet_fund_claimed=TRUE WHERE encode(address::bytea,'hex')=$1", tableName)
+	sm := fmt.Sprintf("UPDATE %s SET faucet_fund_claimed=TRUE WHERE encode(sa_address::bytea,'hex')=$1", tableName)
 	res, err := da.db.Exec(sm, address)
 	if err != nil {
 		return errors.Wrap(err, "Failed to update database")
@@ -139,9 +155,12 @@ func (da *DAO) MarkUserFunded(address string) error {
 
 type Record struct {
 	UserID       string
-	Address      string
-	PubKey       crypto.PubKey
-	PrivateKey   crypto.PrivKey
+	RaAddress    string
+	RaPubKey     crypto.PubKey
+	RaPrivateKey crypto.PrivKey
+	SaAddress    string
+	SaPubKey     crypto.PubKey
+	SaPrivateKey crypto.PrivKey
 	Type         string
 	CreatedAt    time.Time
 	FaucetFunded bool

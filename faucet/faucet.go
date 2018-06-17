@@ -66,7 +66,7 @@ func (fr *FaucetManager) tryGrantFunds() {
 	count, errCount := 0, 0
 	for _, record := range records {
 		logger.WithFields(log.Fields{"record": record}).Info("Process faucet queue item")
-		err := fr.addInitalFund(record.Address)
+		err := fr.addInitalFund(record.SaAddress)
 		if err != nil {
 			errCount++
 		}

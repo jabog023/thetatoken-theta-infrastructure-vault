@@ -35,7 +35,25 @@ func NewRPCHandler(client RPCClient, km keymanager.KeyManager) *ThetaRPCHandler 
 
 type GetAccountArgs struct{}
 
-func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, result *theta.GetAccountResult) (err error) {
+type GetAccountResult struct {
+	UserID      string
+	SendAccount *theta.GetAccountResult // Account to send from
+	RecvAccount *theta.GetAccountResult // Account to receive into
+}
+
+// getAccount is a helper function to query account from blockchain
+func (h *ThetaRPCHandler) getAccount(address string) (*theta.GetAccountResult, error) {
+	resp, err := h.Client.Call("theta.GetAccount", theta.GetAccountArgs{Address: address})
+	if err != nil {
+		return nil, errors.Wrap(err, "Error in RPC call")
+	}
+	result := &theta.GetAccountResult{}
+	err = resp.GetObject(result)
+	result.Address = address
+	return result, nil
+}
+
+func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, result *GetAccountResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
 	if userid == "" {
 		return errors.New("No userid is passed in")
@@ -45,12 +63,21 @@ func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, resu
 	if err != nil {
 		return errors.Wrapf(err, "Failed to find userid: %v", userid)
 	}
-	resp, err := h.Client.Call("theta.GetAccount", theta.GetAccountArgs{Address: record.Address})
+
+	// Load SendAccount
+	sendAccount, err := h.getAccount(record.SaAddress)
 	if err != nil {
-		return errors.Wrap(err, "Error in RPC call")
+		return errors.Wrapf(err, "Failed to find sendAccount for %v", userid)
 	}
-	err = resp.GetObject(result)
-	result.Address = record.Address
+	result.SendAccount = sendAccount
+
+	// Load RecvAccount
+	recvAccount, err := h.getAccount(record.RaAddress)
+	if err != nil {
+		return errors.Wrapf(err, "Failed to find recvAccount for %v", userid)
+	}
+	result.RecvAccount = recvAccount
+
 	return
 }
 
@@ -92,7 +119,8 @@ func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.Br
 		Sequence: args.Sequence,
 	}
 
-	input.Address, err = hex.DecodeString(record.Address)
+	// We only allow user to spend his RecvAccount
+	input.Address, err = hex.DecodeString(record.RaAddress)
 	if err != nil {
 		return errors.Wrap(err, "Failed to decode address")
 	}
@@ -107,9 +135,9 @@ func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.Br
 		Tx: tx,
 	}
 	send.SetChainID(viper.GetString(util.CfgThetaChainId))
-	send.AddSigner(record.PubKey)
+	send.AddSigner(record.RaPubKey)
 
-	txBytes, err := keymanager.Sign(record.PubKey, record.PrivateKey, send)
+	txBytes, err := keymanager.Sign(record.RaPubKey, record.RaPrivateKey, send)
 	if err != nil {
 		return errors.Wrap(err, "Failed to sign tx")
 	}
@@ -179,7 +207,8 @@ func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, re
 	}
 
 	// Wrap and add signer
-	address, err := hex.DecodeString(record.Address)
+	// Send from SendAccount
+	address, err := hex.DecodeString(record.SaAddress)
 	if err != nil {
 		return
 	}
@@ -211,8 +240,8 @@ func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, re
 		Tx: tx,
 	}
 	reserveTx.SetChainID(viper.GetString(util.CfgThetaChainId))
-	reserveTx.AddSigner(record.PubKey)
-	txBytes, err := keymanager.Sign(record.PubKey, record.PrivateKey, reserveTx)
+	reserveTx.AddSigner(record.SaPubKey)
+	txBytes, err := keymanager.Sign(record.SaPubKey, record.SaPrivateKey, reserveTx)
 	if err != nil {
 		return
 	}
@@ -256,7 +285,7 @@ func (h *ThetaRPCHandler) ReleaseFund(r *http.Request, args *ReleaseFundArgs, re
 		return
 	}
 
-	address, err := hex.DecodeString(record.Address)
+	address, err := hex.DecodeString(record.SaAddress)
 	if err != nil {
 		return
 	}
@@ -285,8 +314,8 @@ func (h *ThetaRPCHandler) ReleaseFund(r *http.Request, args *ReleaseFundArgs, re
 		Tx: tx,
 	}
 	releaseTx.SetChainID(viper.GetString(util.CfgThetaChainId))
-	releaseTx.AddSigner(record.PubKey)
-	txBytes, err := keymanager.Sign(record.PubKey, record.PrivateKey, releaseTx)
+	releaseTx.AddSigner(record.SaPubKey)
+	txBytes, err := keymanager.Sign(record.SaPubKey, record.SaPrivateKey, releaseTx)
 	if err != nil {
 		return
 	}
@@ -326,7 +355,8 @@ func (h *ThetaRPCHandler) CreateServicePayment(r *http.Request, args *CreateServ
 		return
 	}
 
-	address, err := hex.DecodeString(record.Address)
+	// Send from SendAccount
+	address, err := hex.DecodeString(record.SaAddress)
 	if err != nil {
 		return
 	}
@@ -357,9 +387,9 @@ func (h *ThetaRPCHandler) CreateServicePayment(r *http.Request, args *CreateServ
 		Tx: tx,
 	}).SenderSignable()
 	paymentTxWrap.SetChainID(viper.GetString(util.CfgThetaChainId))
-	paymentTxWrap.AddSigner(record.PubKey)
+	paymentTxWrap.AddSigner(record.SaPubKey)
 
-	txBytes, err := keymanager.Sign(record.PubKey, record.PrivateKey, paymentTxWrap)
+	txBytes, err := keymanager.Sign(record.SaPubKey, record.SaPrivateKey, paymentTxWrap)
 	if err != nil {
 		return
 	}
@@ -389,7 +419,8 @@ func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServ
 		return
 	}
 
-	address, err := hex.DecodeString(record.Address)
+	// Receive into RecvAccount
+	address, err := hex.DecodeString(record.RaAddress)
 	if err != nil {
 		return
 	}
@@ -424,10 +455,10 @@ func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServ
 		Tx: paymentTx,
 	}).ReceiverSignable()
 	paymentTxWrap.SetChainID(viper.GetString(util.CfgThetaChainId))
-	paymentTxWrap.AddSigner(record.PubKey)
+	paymentTxWrap.AddSigner(record.RaPubKey)
 
 	// Sign the tx
-	txBytes, err := keymanager.Sign(record.PubKey, record.PrivateKey, paymentTxWrap)
+	txBytes, err := keymanager.Sign(record.RaPubKey, record.RaPrivateKey, paymentTxWrap)
 	if err != nil {
 		return
 	}
@@ -487,12 +518,13 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 	if err != nil {
 		return
 	}
-	initiatorAddress, err := hex.DecodeString(initiator.Address)
+	// Use SendAccount to fund tx fee.
+	initiatorAddress, err := hex.DecodeString(initiator.SaAddress)
 	if err != nil {
 		return
 	}
 
-	sequence, err := h.getSequence(initiator.Address)
+	sequence, err := h.getSequence(initiator.SaAddress)
 
 	initiatorInput := types.TxInput{
 		Address:  initiatorAddress,
@@ -505,7 +537,7 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 		if err != nil {
 			return err
 		}
-		address, err := hex.DecodeString(record.Address)
+		address, err := hex.DecodeString(record.SaAddress)
 		if err != nil {
 			return err
 		}
@@ -532,9 +564,9 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 	})
 
 	splitContractTx.SetChainID(viper.GetString(util.CfgThetaChainId))
-	splitContractTx.AddSigner(initiator.PubKey)
+	splitContractTx.AddSigner(initiator.SaPubKey)
 
-	txBytes, err := keymanager.Sign(initiator.PubKey, initiator.PrivateKey, splitContractTx)
+	txBytes, err := keymanager.Sign(initiator.SaPubKey, initiator.SaPrivateKey, splitContractTx)
 	if err != nil {
 		return
 	}

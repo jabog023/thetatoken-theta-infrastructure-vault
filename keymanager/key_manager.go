@@ -52,15 +52,19 @@ func (km SqlKeyManager) FindByUserId(userid string) (db.Record, error) {
 
 	if err == db.ErrNoRecord {
 		log.Printf("No record with user ID: %s. Creating keys.", userid)
-		address, pubkey, privkey, _, err := genKey()
+		raAddress, raPubkey, raPrivkey, _, err := genKey()
+		saAddress, saPubkey, saPrivkey, _, err := genKey()
 		if err != nil {
 			return db.Record{}, err
 		}
 		record := db.Record{
-			Address:    address,
-			PubKey:     pubkey,
-			PrivateKey: privkey,
-			UserID:     userid,
+			RaAddress:    raAddress,
+			RaPubKey:     raPubkey,
+			RaPrivateKey: raPrivkey,
+			SaAddress:    saAddress,
+			SaPubKey:     saPubkey,
+			SaPrivateKey: saPrivkey,
+			UserID:       userid,
 		}
 		err = km.da.Create(record)
 		if err != nil {

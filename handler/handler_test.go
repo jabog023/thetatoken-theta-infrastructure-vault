@@ -24,24 +24,29 @@ import (
 var logger = log.WithFields(log.Fields{"component": "server"})
 
 func getRecord() db.Record {
-	pubKeyBytes, _ := hex.DecodeString("1220355897db094c7aac8242e0bce8ae6a4db8b6c08b38bed3290ea3560a6515cc3b")
-	privKeyBytes, _ := hex.DecodeString("12406f77b49c99cb22d63f84ffc7da54da0141b91f86627dda1c37a0bfe3eb1111e7355897db094c7aac8242e0bce8ae6a4db8b6c08b38bed3290ea3560a6515cc3b")
-	pubKey := crypto.PubKey{}
-	types.FromBytes(pubKeyBytes, &pubKey)
-	privKey := crypto.PrivKey{}
-	types.FromBytes(privKeyBytes, &privKey)
+	saPrivKey := crypto.GenPrivKeyEd25519FromSecret([]byte("foo")).Wrap()
+	saPubKey := saPrivKey.PubKey()
+	saAddress := hex.EncodeToString(saPubKey.Address())
+
+	raPrivKey := crypto.GenPrivKeyEd25519FromSecret([]byte("bar")).Wrap()
+	raPubKey := raPrivKey.PubKey()
+	raAddress := hex.EncodeToString(raPubKey.Address())
+
 	return db.Record{
-		UserID:     "alice",
-		Type:       "ed25519",
-		Address:    "2674ae64cb5206b2afc6b6fbd0e5a65c025b5016",
-		PubKey:     pubKey,
-		PrivateKey: privKey,
+		UserID:       "alice",
+		Type:         "ed25519",
+		SaAddress:    saAddress,
+		SaPubKey:     saPubKey,
+		SaPrivateKey: saPrivKey,
+		RaAddress:    raAddress,
+		RaPubKey:     raPubKey,
+		RaPrivateKey: raPrivKey,
 	}
 }
 
 func TestSanity(t *testing.T) {
 	record := getRecord()
-	assert.Equal(t, record.Address, hex.EncodeToString(record.PubKey.Address()))
+	assert.Equal(t, record.SaAddress, hex.EncodeToString(record.SaPubKey.Address()))
 }
 
 func TestGetAccount(t *testing.T) {
@@ -51,7 +56,7 @@ func TestGetAccount(t *testing.T) {
 	var mockKeyManager *keymanager.MockKeyManager
 	var handler *ThetaRPCHandler
 	var args *GetAccountArgs
-	var result *theta.GetAccountResult
+	var result *GetAccountResult
 	var err error
 
 	// Should return account successfully.
@@ -65,12 +70,12 @@ func TestGetAccount(t *testing.T) {
 		On("Call", "theta.GetAccount", mock.Anything).
 		Return(&rpcc.RPCResponse{Result: &types.Account{Balance: types.Coins{{Amount: 123}}}}, nil)
 	args = &GetAccountArgs{}
-	result = &theta.GetAccountResult{}
+	result = &GetAccountResult{}
 	req, _ := http.NewRequest("", "", bytes.NewBufferString(""))
 	req.Header.Add("X-Auth-User", "alice")
 	err = handler.GetAccount(req, args, result)
 	assert.Nil(err)
-	assert.Equal(int64(123), result.Balance[0].Amount)
+	assert.Equal(int64(123), result.SendAccount.Balance[0].Amount)
 
 	// Should return error when RPC call fail
 	mockRPC = &MockRPCClient{}
@@ -82,7 +87,7 @@ func TestGetAccount(t *testing.T) {
 	mockRPC.
 		On("Call", "theta.GetAccount", mock.Anything).
 		Return(nil, errors.New("rpc error"))
-	result = &theta.GetAccountResult{}
+	result = &GetAccountResult{}
 	req, _ = http.NewRequest("", "", bytes.NewBufferString(""))
 	req.Header.Add("X-Auth-User", "alice")
 	err = handler.GetAccount(req, args, result)
@@ -98,7 +103,7 @@ func TestGetAccount(t *testing.T) {
 	mockRPC.
 		On("Call", "theta.GetAccount", mock.Anything).
 		Return(&rpcc.RPCResponse{Result: &types.Account{Balance: types.Coins{{Amount: 123}}}}, nil)
-	result = &theta.GetAccountResult{}
+	result = &GetAccountResult{}
 	req, _ = http.NewRequest("", "", bytes.NewBufferString(""))
 	req.Header.Add("X-Auth-User", "alice")
 	err = handler.GetAccount(req, args, result)
@@ -131,16 +136,13 @@ func TestSign(t *testing.T) {
 		},
 	}
 	sendTx.SetChainID("test_chain_id")
-	sendTx.AddSigner(record.PubKey)
-	txBytes, err := keymanager.Sign(record.PubKey, record.PrivateKey, sendTx)
+	sendTx.AddSigner(record.SaPubKey)
+	txBytes, err := keymanager.Sign(record.SaPubKey, record.SaPrivateKey, sendTx)
 
-	expectedTxBytes, _ := hex.DecodeString("12C7010805120C0A0847616D6D6157656910041A8E010A142674AE64CB5206B2AFC6B6FBD0E5A65C025B5016120C0A085468657461576569107B18012242124043F1E91C42DF3235A2849C886716A1749B3C563FC62BD38AF647CC716730DB32DCEA959C263C6A74CDC79DEA289D2DEA0A83C063230748391EA32C79EBE6300B2A221220355897DB094C7AAC8242E0BCE8AE6A4DB8B6C08B38BED3290EA3560A6515CC3B22240A14EFEE576F3D668674BC73E007F6ABFA243311BD37120C0A085468657461576569107B")
+	expectedTxBytes := "12c7010805120c0a0847616d6d6157656910041a8e010a1468f7c99e3c68a61a538032508f36215538a3e325120c0a085468657461576569107b180122421240dc674cdbf46c5963e522c2acafad40edbf52f784dfbbc265ea4863b949aeafcb1a5731d01a044ed423c7be3aad7a4eae3d5317ccfbb9de8fc8e3f92806ae28052a22122034d26579dbb456693e540672cf922f52dde0d6532e35bf06be013a7c532f20e022240a14efee576f3d668674bc73e007f6abfa243311bd37120c0a085468657461576569107b"
 
 	assert.Nil(err)
-	assert.Equal(expectedTxBytes, txBytes)
-
-	assert.Equal(bytes.Compare(expectedTxBytes, txBytes), 0)
-
+	assert.Equal(expectedTxBytes, hex.EncodeToString(txBytes))
 }
 
 func TestSend(t *testing.T) {
@@ -160,7 +162,7 @@ func TestSend(t *testing.T) {
 	mockKeyManager.
 		On("FindByUserId", "alice").
 		Return(getRecord(), nil)
-	expectedTxBytes := "12c7010805120c0a0847616d6d6157656910041a8e010a142674ae64cb5206b2afc6b6fbd0e5a65c025b5016120c0a085468657461576569107b180122421240efaacebb519466cc7f60598b5fe13e01b25c9bded5c33a60c0bbf61c4ae23fa8eb91de01d4fd3d1bdc88c29fdff33dff61b35769e4696f2c55789290b0d5420e2a221220355897db094c7aac8242e0bce8ae6a4db8b6c08b38bed3290ea3560a6515cc3b22240a14efee576f3d668674bc73e007f6abfa243311bd37120c0a085468657461576569107b"
+	expectedTxBytes := "12c7010805120c0a0847616d6d6157656910041a8e010a148a530213c34f0b8ee35fdc23c4169356f5f845db120c0a085468657461576569107b180122421240bc6044be4fe547b2f62fbd4e6ef0e10981ea4222950c32d0815ddbb7c8dd9174415b8eafe811f3adadca67a0cb36bb9e49d0c7d69ba1024b80a7f4dd9958610f2a221220cca45b406ad886997c34d86f341b212153a1cc813e3ad999a3e1516e82e8178122240a14efee576f3d668674bc73e007f6abfa243311bd37120c0a085468657461576569107b"
 	resp := theta.BroadcastRawTransactionResult{&core_types.ResultBroadcastTxCommit{Height: 123}}
 	mockRPC.
 		On("Call", "theta.BroadcastRawTransaction", &theta.BroadcastRawTransactionArgs{TxBytes: expectedTxBytes}).
