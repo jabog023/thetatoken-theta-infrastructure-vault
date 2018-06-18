@@ -36,9 +36,9 @@ func NewRPCHandler(client RPCClient, km keymanager.KeyManager) *ThetaRPCHandler 
 type GetAccountArgs struct{}
 
 type GetAccountResult struct {
-	UserID      string
-	SendAccount *theta.GetAccountResult // Account to send from
-	RecvAccount *theta.GetAccountResult // Account to receive into
+	UserID      string                  `json:"user_id"`
+	SendAccount *theta.GetAccountResult `json:"send_account"` // Account to send from
+	RecvAccount *theta.GetAccountResult `json:"recv_account"` // Account to receive into
 }
 
 // getAccount is a helper function to query account from blockchain
@@ -340,6 +340,7 @@ func (h *ThetaRPCHandler) ReleaseFund(r *http.Request, args *ReleaseFundArgs, re
 type CreateServicePaymentArgs struct {
 	To              string `json:"to"`               // Required. Address to target account.
 	Amount          int64  `json:"amount"`           // Required. Amount of payment in GammaWei
+	ResourceId      string `json:"resource_id"`      // Required. Resource ID the payment is for.
 	PaymentSequence int    `json:"payment_sequence"` // Required. each on-chain settlement needs to increase the payment sequence by 1
 	ReserveSequence int    `json:"reserve_sequence"` // Required. Sequence number of the fund to send.
 }
@@ -353,6 +354,10 @@ func (h *ThetaRPCHandler) CreateServicePayment(r *http.Request, args *CreateServ
 	record, err := h.KeyManager.FindByUserId(userid)
 	if err != nil {
 		return
+	}
+
+	if args.ResourceId == "" {
+		return errors.New("No resource_id is provided")
 	}
 
 	// Send from SendAccount
@@ -382,6 +387,7 @@ func (h *ThetaRPCHandler) CreateServicePayment(r *http.Request, args *CreateServ
 		Target:          targetInput,
 		PaymentSequence: args.PaymentSequence,
 		ReserveSequence: args.ReserveSequence,
+		ResourceId:      []byte(args.ResourceId),
 	}
 	paymentTxWrap := (&cmd.ServicePaymentTx{
 		Tx: tx,
