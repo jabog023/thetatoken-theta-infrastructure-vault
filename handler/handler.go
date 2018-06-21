@@ -360,6 +360,11 @@ func (h *ThetaRPCHandler) CreateServicePayment(r *http.Request, args *CreateServ
 		return errors.New("No resource_id is provided")
 	}
 
+	if args.To == record.RaAddress || args.To == record.SaAddress {
+		// You don't need to pay yourself.
+		return
+	}
+
 	// Send from SendAccount
 	address, err := hex.DecodeString(record.SaAddress)
 	if err != nil {
@@ -436,6 +441,10 @@ func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServ
 		Sequence: args.Sequence,
 	}
 	input.Address = address
+
+	if args.Payment == "" {
+		return errors.Errorf("Payment is empty")
+	}
 
 	paymentBytes, err := hex.DecodeString(args.Payment)
 	if err != nil {
