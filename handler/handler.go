@@ -196,7 +196,7 @@ func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, re
 	}
 
 	if args.Duration == 0 {
-		args.Duration = common.MaximumFundReserveDuration
+		args.Duration = common.MinimumFundReserveDuration
 	}
 	// Add minimal gas/fee.
 	if args.Gas == 0 {
