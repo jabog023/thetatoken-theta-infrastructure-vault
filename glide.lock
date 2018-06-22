@@ -1,5 +1,5 @@
-hash: f04b840c78e5f538b7ce4954a7b4c3bfc2a545565c605fccd3e7e04842166a7d
-updated: 2018-06-06T17:03:30.894364-07:00
+hash: 817970cd4559ad25342afff39459d69a5143e91624d3b34d6c876f8966e126fa
+updated: 2018-06-22T16:03:00.673887-07:00
 imports:
 - name: github.com/aws/aws-sdk-go
   version: 9b0098a71f6d4d473a26ec8ad3c2feaac6eb1da6
@@ -147,18 +147,9 @@ imports:
   subpackages:
   - edwards25519
   - extra25519
-- name: github.com/tendermint/go-wire
-  version: 5f88da3dbc1a72844e6dfaf274ce87f851d488eb
-  subpackages:
-  - data
-- name: github.com/tendermint/tmlibs
-  version: 7ce4da1eee6004d627e780c8fe91e96d9b99e459
-  subpackages:
-  - common
-  - log
 - name: github.com/thetatoken/theta
-  version: 9cbed58c5833d32a11d04e18f42f08e6ca16f81a
-  repo: git@github.com:slivertv/theta-blockchain-internal
+  version: e0d09e5f8ef3d03e89ab24cd796b7635fc72ff47
+  repo: git@github.com:thetatoken/theta-protocol-ledger
   subpackages:
   - abci
   - abci/client
@@ -252,6 +243,7 @@ imports:
   - idna
   - internal/timeseries
   - lex/httplex
+  - netutil
   - trace
 - name: golang.org/x/sys
   version: e62c3de784db939836898e5c19ffd41bece347da

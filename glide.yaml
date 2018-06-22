@@ -11,7 +11,7 @@ import:
 - package: github.com/ybbus/jsonrpc
   version: ^1.0.1
 - package: github.com/thetatoken/theta
-  repo: git@github.com:slivertv/theta-blockchain-internal
+  repo: git@github.com:thetatoken/theta-protocol-ledger
   subpackages:
   - abci
   - go-crypto
