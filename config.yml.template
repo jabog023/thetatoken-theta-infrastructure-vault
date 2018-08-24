@@ -6,6 +6,7 @@ db.pass: admin
 
 theta.chain_id: test_chain_id
 theta.rpc_endpoint: http://localhost:16888/rpc
+theta.default_reserve_duration_secs: 900
 
 server.port: 20000
 server.max_connections: 200

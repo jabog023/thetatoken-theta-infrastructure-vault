@@ -196,7 +196,7 @@ func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, re
 	}
 
 	if args.Duration == 0 {
-		args.Duration = common.MinimumFundReserveDuration
+		args.Duration = uint64(viper.GetInt64(util.CfgThetaDefaultReserveDurationSecs))
 	}
 	// Add minimal gas/fee.
 	if args.Gas == 0 {
@@ -519,7 +519,7 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 		return errors.New("No initiator is passed in")
 	}
 	if len(args.Participants) != len(args.Percentages) {
-		return errors.New("Length of participents doesn't match with length of percentages")
+		return errors.New("Length of participants doesn't match with length of percentages")
 	}
 	// Add minimal gas/fee.
 	if args.Gas == 0 {
@@ -552,7 +552,7 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 		if err != nil {
 			return err
 		}
-		address, err := hex.DecodeString(record.SaAddress)
+		address, err := hex.DecodeString(record.RaAddress)
 		if err != nil {
 			return err
 		}
@@ -564,13 +564,18 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 		})
 	}
 
-	duration := uint64(86400 * 365 * 10)
+	// duration := uint64(86400 * 365 * 10)
+	if args.Duration == 0 {
+		args.Duration = uint64(86400 * 365 * 10)
+	}
 
 	tx := &types.SplitContractTx{
+		Gas:        args.Gas,
+		Fee:        args.Fee,
 		ResourceId: []byte(args.ResourceId),
 		Initiator:  initiatorInput,
 		Splits:     splits,
-		Duration:   duration,
+		Duration:   args.Duration,
 	}
 
 	// Wrap and add signer

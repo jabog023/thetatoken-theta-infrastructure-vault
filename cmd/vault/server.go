@@ -51,6 +51,21 @@ func decompressMiddleware(handler http.Handler) http.Handler {
 	})
 }
 
+func corsMiddleware(handler http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		//Allow CORS here By * or specific origin
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		handler.ServeHTTP(w, r)
+	})
+}
+
 func startServer(da *db.DAO) {
 	logger := log.WithFields(log.Fields{"method": "rpc.startServer"})
 
@@ -71,7 +86,8 @@ func startServer(da *db.DAO) {
 	r := mux.NewRouter()
 	r.Use(util.LoggerMiddleware)
 	r.Use(decompressMiddleware)
-	r.Handle("/rpc", s)
+	// r.Use(corsMiddleware)
+	r.Handle("/rpc", corsMiddleware(s))
 
 	port := viper.GetString(util.CfgServerPort)
 	l, err := net.Listen("tcp", ":"+port)
