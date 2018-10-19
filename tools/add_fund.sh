@@ -3,15 +3,16 @@
 set -e
 
 pass="qwertyuiop"
+faucet="2E833968E5bB786Ae419c4d13189fB081Cc43bab"
 
-seq="$(thetacli query account 6D2F435CF553C111F23D120CA24D794ADB327738 | jq -r '.data.sequence')"
+seq=$(banjo query account --address=$faucet | jq -r '.sequence')
 ((seq++))
 echo "seq: $seq\n"
 /usr/bin/expect <<EOD
-spawn thetacli tx send --name=faucet --amount=$2ThetaWei,$3GammaWei --to=$1 --sequence=$seq
-expect "Please enter passphrase"
+spawn banjo tx send --chain= --from=$faucet --to=$1 --theta=$2 --gamma=$3 --seq=$seq
+expect "Please enter password"
 send "$pass\r"
-expect "hash"
+expect "transaction"
 interact
 EOD
 
