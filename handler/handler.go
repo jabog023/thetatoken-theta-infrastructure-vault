@@ -2,15 +2,15 @@ package handler
 
 import (
 	"encoding/hex"
+	"math/big"
 	"net/http"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	cmd "github.com/thetatoken/theta/cmd/thetacli/commands"
-	"github.com/thetatoken/theta/common"
-	theta "github.com/thetatoken/theta/rpc"
-	"github.com/thetatoken/theta/types"
+	tcmn "github.com/thetatoken/ukulele/common"
+	ttypes "github.com/thetatoken/ukulele/ledger/types"
+	ukulele "github.com/thetatoken/ukulele/rpc"
 	"github.com/thetatoken/vault/keymanager"
 	"github.com/thetatoken/vault/util"
 	rpcc "github.com/ybbus/jsonrpc"
@@ -36,18 +36,18 @@ func NewRPCHandler(client RPCClient, km keymanager.KeyManager) *ThetaRPCHandler 
 type GetAccountArgs struct{}
 
 type GetAccountResult struct {
-	UserID      string                  `json:"user_id"`
-	SendAccount *theta.GetAccountResult `json:"send_account"` // Account to send from
-	RecvAccount *theta.GetAccountResult `json:"recv_account"` // Account to receive into
+	UserID      string                    `json:"user_id"`
+	SendAccount *ukulele.GetAccountResult `json:"send_account"` // Account to send from
+	RecvAccount *ukulele.GetAccountResult `json:"recv_account"` // Account to receive into
 }
 
 // getAccount is a helper function to query account from blockchain
-func (h *ThetaRPCHandler) getAccount(address string) (*theta.GetAccountResult, error) {
-	resp, err := h.Client.Call("theta.GetAccount", theta.GetAccountArgs{Address: address})
+func (h *ThetaRPCHandler) getAccount(address string) (*ukulele.GetAccountResult, error) {
+	resp, err := h.Client.Call("theta.GetAccount", ukulele.GetAccountArgs{Address: address})
 	if err != nil {
 		return nil, errors.Wrap(err, "Error in RPC call")
 	}
-	result := &theta.GetAccountResult{}
+	result := &ukulele.GetAccountResult{}
 	err = resp.GetObject(result)
 	result.Address = address
 	return result, nil
@@ -65,14 +65,14 @@ func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, resu
 	}
 
 	// Load SendAccount
-	sendAccount, err := h.getAccount(record.SaAddress)
+	sendAccount, err := h.getAccount(record.SaAddress.String())
 	if err != nil {
 		return errors.Wrapf(err, "Failed to find sendAccount for %v", userid)
 	}
 	result.SendAccount = sendAccount
 
 	// Load RecvAccount
-	recvAccount, err := h.getAccount(record.RaAddress)
+	recvAccount, err := h.getAccount(record.RaAddress.String())
 	if err != nil {
 		return errors.Wrapf(err, "Failed to find recvAccount for %v", userid)
 	}
@@ -84,13 +84,14 @@ func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, resu
 // ------------------------------- Send -----------------------------------
 
 type SendArgs struct {
-	To       []types.TxOutput `json:"to"`       // Required. Outputs including addresses and amount.
-	Fee      types.Coin       `json:"fee"`      // Optional. Transaction fee. Default to 0.
-	Gas      int64            `json:"gas"`      // Optional. Amount of gas. Default to 0.
-	Sequence int              `json:"sequence"` // Required. Sequence number of this transaction.
+	To       string       `json:"to"`       // Required. Outputs including addresses and amount.
+	Amount   ttypes.Coins `json:"amount"`   // Required. The amount to send.
+	Fee      uint64       `json:"fee"`      // Optional. Transaction fee. Default to 0.
+	Gas      uint64       `json:"gas"`      // Optional. Amount of gas. Default to 0.
+	Sequence uint64       `json:"sequence"` // Required. Sequence number of this transaction.
 }
 
-func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.BroadcastRawTransactionResult) (err error) {
+func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *ukulele.BroadcastRawTransactionResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
 	if userid == "" {
 		return errors.New("No userid is passed in")
@@ -101,48 +102,50 @@ func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.Br
 		return
 	}
 
+	amount := args.Amount.NoNil()
+
 	// Add minimal gas/fee.
 	if args.Gas == 0 {
 		args.Gas = 1
 	}
-	if args.Fee.Amount == 0 {
-		args.Fee = types.Coin{Denom: "GammaWei", Amount: 1}
+	if args.Fee == 0 {
+		args.Fee = 1
 	}
 
-	// Wrap and add signer
-	total := types.Coins{}
-	for _, out := range args.To {
-		total = total.Plus(out.Coins)
+	fee := ttypes.Coins{
+		ThetaWei: ttypes.Zero,
+		GammaWei: big.NewInt(0).SetUint64(args.Fee),
 	}
-	input := types.TxInput{
-		Coins:    total,
+	inputs := []ttypes.TxInput{{
+		Address:  record.RaAddress,
+		Coins:    amount.Plus(fee),
 		Sequence: args.Sequence,
-	}
-
-	// We only allow user to spend his RecvAccount
-	input.Address, err = hex.DecodeString(record.RaAddress)
-	if err != nil {
-		return errors.Wrap(err, "Failed to decode address")
-	}
-	inputs := []types.TxInput{input}
-	tx := &types.SendTx{
+	}}
+	outputs := []ttypes.TxOutput{{
+		Address: tcmn.HexToAddress(args.To),
+		Coins:   args.Amount,
+	}}
+	sendTx := &ttypes.SendTx{
+		Fee:     fee,
 		Gas:     args.Gas,
-		Fee:     args.Fee,
 		Inputs:  inputs,
-		Outputs: args.To,
+		Outputs: outputs,
 	}
-	send := &cmd.SendTx{
-		Tx: tx,
-	}
-	send.SetChainID(viper.GetString(util.CfgThetaChainId))
-	send.AddSigner(record.RaPubKey)
 
-	txBytes, err := keymanager.Sign(record.RaPubKey, record.RaPrivateKey, send)
+	chainID := viper.GetString(util.CfgThetaChainId)
+	sig, err := record.RaPrivateKey.Sign(sendTx.SignBytes(chainID))
 	if err != nil {
-		return errors.Wrap(err, "Failed to sign tx")
+		return err
 	}
+	sendTx.SetSignature(record.RaAddress, sig)
 
-	broadcastArgs := &theta.BroadcastRawTransactionArgs{TxBytes: hex.EncodeToString(txBytes)}
+	raw, err := ttypes.TxToBytes(sendTx)
+	if err != nil {
+		return err
+	}
+	signedTx := hex.EncodeToString(raw)
+
+	broadcastArgs := &ukulele.BroadcastRawTransactionArgs{TxBytes: signedTx}
 	resp, err := h.Client.Call("theta.BroadcastRawTransaction", broadcastArgs)
 	if err != nil {
 		return
@@ -158,7 +161,7 @@ func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *theta.Br
 
 // --------------------------- BroadcastRawTransaction ----------------------------
 
-func (h *ThetaRPCHandler) BroadcastRawTransaction(r *http.Request, args *theta.BroadcastRawTransactionArgs, result *theta.BroadcastRawTransactionResult) (err error) {
+func (h *ThetaRPCHandler) BroadcastRawTransaction(r *http.Request, args *ukulele.BroadcastRawTransactionArgs, result *ukulele.BroadcastRawTransactionResult) (err error) {
 	resp, err := h.Client.Call("theta.BroadcastRawTransaction", args)
 	if err != nil {
 		return
@@ -175,16 +178,21 @@ func (h *ThetaRPCHandler) BroadcastRawTransaction(r *http.Request, args *theta.B
 // --------------------------- Reserve -------------------------------
 
 type ReserveFundArgs struct {
-	Fee         types.Coin `json:"fee"`          // Optional. Transaction fee. Default to 0.
-	Gas         int64      `json:"gas"`          // Optional. Amount of gas. Default to 0.
-	Collateral  int64      `json:"collateral"`   // Required. Amount in GammaWei as the collateral
-	Fund        int64      `json:"fund"`         // Required. Amount in GammaWei to reserve.
-	ResourceIds []string   `json:"resource_ids"` // List of resource ID
-	Duration    uint64     `json:"duration"`     // Optional. Number of blocks to lock the fund.
-	Sequence    int        `json:"sequence"`     // Required. Sequence number of this transaction.
+	Fee         uint64   `json:"fee"`          // Optional. Transaction fee. Default to 0.
+	Gas         uint64   `json:"gas"`          // Optional. Amount of gas. Default to 0.
+	Collateral  uint64   `json:"collateral"`   // Required. Amount in GammaWei as the collateral
+	Fund        uint64   `json:"fund"`         // Required. Amount in GammaWei to reserve.
+	ResourceIds []string `json:"resource_ids"` // List of resource ID
+	Duration    uint64   `json:"duration"`     // Optional. Number of blocks to lock the fund.
+	Sequence    uint64   `json:"sequence"`     // Required. Sequence number of this transaction.
 }
 
-func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, result *theta.ReserveFundResult) (err error) {
+type ReserveFundResult struct {
+	*ukulele.BroadcastRawTransactionResult
+	ReserveSequence uint64 `json:"reserve_sequence"` // Sequence number of the reserved fund.
+}
+
+func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, result *ReserveFundResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
 	if userid == "" {
 		return errors.New("No userid is passed in.")
@@ -198,57 +206,64 @@ func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, re
 	if args.Duration == 0 {
 		args.Duration = uint64(viper.GetInt64(util.CfgThetaDefaultReserveDurationSecs))
 	}
+
 	// Add minimal gas/fee.
 	if args.Gas == 0 {
 		args.Gas = 1
 	}
-	if args.Fee.Amount == 0 {
-		args.Fee = types.Coin{Denom: "GammaWei", Amount: 1}
+	if args.Fee == 0 {
+		args.Fee = 1
 	}
 
-	// Wrap and add signer
 	// Send from SendAccount
-	address, err := hex.DecodeString(record.SaAddress)
-	if err != nil {
-		return
-	}
-	input := types.TxInput{
-		Coins:    types.Coins{{Denom: common.DenomGammaWei, Amount: args.Fund}},
+	input := ttypes.TxInput{
+		Coins: ttypes.Coins{
+			ThetaWei: big.NewInt(0),
+			GammaWei: big.NewInt(0).SetUint64(args.Fund),
+		},
 		Sequence: args.Sequence,
-		Address:  address,
+		Address:  record.SaAddress,
 	}
 
-	var resourceIds [][]byte
+	var resourceIds []tcmn.Bytes
 	for _, ridStr := range args.ResourceIds {
 		resourceIds = append(resourceIds, []byte(ridStr))
 	}
 
-	collateral := types.Coins{{
-		Denom:  common.DenomGammaWei,
-		Amount: args.Collateral,
-	}}
-	tx := &types.ReserveFundTx{
-		Gas:         args.Gas,
-		Fee:         args.Fee,
+	collateral := ttypes.Coins{
+		ThetaWei: big.NewInt(0),
+		GammaWei: big.NewInt(0).SetUint64(args.Collateral),
+	}
+	tx := &ttypes.ReserveFundTx{
+		Gas: args.Gas,
+		Fee: ttypes.Coins{
+			ThetaWei: ttypes.Zero,
+			GammaWei: big.NewInt(0).SetUint64(args.Fee),
+		},
 		Source:      input,
 		Collateral:  collateral,
-		ResourceIds: resourceIds,
+		ResourceIDs: resourceIds,
 		Duration:    args.Duration,
 	}
 
-	reserveTx := &cmd.ReserveFundTx{
-		Tx: tx,
-	}
-	reserveTx.SetChainID(viper.GetString(util.CfgThetaChainId))
-	reserveTx.AddSigner(record.SaPubKey)
-	txBytes, err := keymanager.Sign(record.SaPubKey, record.SaPrivateKey, reserveTx)
+	chainID := viper.GetString(util.CfgThetaChainId)
+
+	sig, err := record.RaPrivateKey.Sign(tx.SignBytes(chainID))
 	if err != nil {
-		return
+		return err
 	}
+	tx.SetSignature(record.RaAddress, sig)
 
-	broadcastArgs := &theta.BroadcastRawTransactionArgs{TxBytes: hex.EncodeToString(txBytes)}
+	raw, err := ttypes.TxToBytes(tx)
+	if err != nil {
+		return err
+	}
+	signedTx := hex.EncodeToString(raw)
+
+	broadcastArgs := &ukulele.BroadcastRawTransactionArgs{
+		TxBytes: signedTx,
+	}
 	resp, err := h.Client.Call("theta.BroadcastRawTransaction", broadcastArgs)
-
 	if err != nil {
 		return
 	}
@@ -268,13 +283,18 @@ func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, re
 // --------------------------- Release -------------------------------
 
 type ReleaseFundArgs struct {
-	Fee             types.Coin `json:"fee"`              // Optional. Transaction fee. Default to 0.
-	Gas             int64      `json:"gas"`              // Optional. Amount of gas. Default to 0.
-	Sequence        int        `json:"sequence"`         // Required. Sequence number of this transaction.
-	ReserveSequence int        `json:"reserve_sequence"` // Required. Sequence number of the fund to release.
+	Fee             uint64 `json:"fee"`              // Optional. Transaction fee. Default to 0.
+	Gas             uint64 `json:"gas"`              // Optional. Amount of gas. Default to 0.
+	Sequence        uint64 `json:"sequence"`         // Required. Sequence number of this transaction.
+	ReserveSequence uint64 `json:"reserve_sequence"` // Required. Sequence number of the fund to release.
 }
 
-func (h *ThetaRPCHandler) ReleaseFund(r *http.Request, args *ReleaseFundArgs, result *theta.ReleaseFundResult) (err error) {
+type ReleaseFundResult struct {
+	*ukulele.BroadcastRawTransactionResult
+	ReserveSequence uint64 `json:"reserve_sequence"` // Sequence number of the reserved fund.
+}
+
+func (h *ThetaRPCHandler) ReleaseFund(r *http.Request, args *ReleaseFundArgs, result *ReleaseFundResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
 	if userid == "" {
 		return errors.New("No userid is passed in.")
@@ -285,44 +305,45 @@ func (h *ThetaRPCHandler) ReleaseFund(r *http.Request, args *ReleaseFundArgs, re
 		return
 	}
 
-	address, err := hex.DecodeString(record.SaAddress)
-	if err != nil {
-		return
-	}
-
 	// Add minimal gas/fee.
 	if args.Gas == 0 {
 		args.Gas = 1
 	}
-	if args.Fee.Amount == 0 {
-		args.Fee = types.Coin{Denom: "GammaWei", Amount: 1}
+	if args.Fee == 0 {
+		args.Fee = 1
 	}
 
 	// Wrap and add signer
-	input := types.TxInput{
+	input := ttypes.TxInput{
 		Sequence: args.Sequence,
-		Address:  address,
+		Address:  record.SaAddress,
 	}
 
-	tx := &types.ReleaseFundTx{
-		Gas:             args.Gas,
-		Fee:             args.Fee,
+	tx := &ttypes.ReleaseFundTx{
+		Gas: args.Gas,
+		Fee: ttypes.Coins{
+			ThetaWei: ttypes.Zero,
+			GammaWei: big.NewInt(0).SetUint64(args.Fee),
+		},
 		Source:          input,
 		ReserveSequence: args.ReserveSequence,
 	}
-	releaseTx := &cmd.ReleaseFundTx{
-		Tx: tx,
-	}
-	releaseTx.SetChainID(viper.GetString(util.CfgThetaChainId))
-	releaseTx.AddSigner(record.SaPubKey)
-	txBytes, err := keymanager.Sign(record.SaPubKey, record.SaPrivateKey, releaseTx)
+
+	chainID := viper.GetString(util.CfgThetaChainId)
+
+	sig, err := record.RaPrivateKey.Sign(tx.SignBytes(chainID))
 	if err != nil {
-		return
+		return err
 	}
+	tx.SetSignature(record.SaAddress, sig)
+	raw, err := ttypes.TxToBytes(tx)
+	if err != nil {
+		return err
+	}
+	signedTx := hex.EncodeToString(raw)
 
-	broadcastArgs := &theta.BroadcastRawTransactionArgs{TxBytes: hex.EncodeToString(txBytes)}
+	broadcastArgs := &ukulele.BroadcastRawTransactionArgs{TxBytes: signedTx}
 	resp, err := h.Client.Call("theta.BroadcastRawTransaction", broadcastArgs)
-
 	if err != nil {
 		return
 	}
@@ -339,13 +360,17 @@ func (h *ThetaRPCHandler) ReleaseFund(r *http.Request, args *ReleaseFundArgs, re
 
 type CreateServicePaymentArgs struct {
 	To              string `json:"to"`               // Required. Address to target account.
-	Amount          int64  `json:"amount"`           // Required. Amount of payment in GammaWei
+	Amount          uint64 `json:"amount"`           // Required. Amount of payment in GammaWei
 	ResourceId      string `json:"resource_id"`      // Required. Resource ID the payment is for.
-	PaymentSequence int    `json:"payment_sequence"` // Required. each on-chain settlement needs to increase the payment sequence by 1
-	ReserveSequence int    `json:"reserve_sequence"` // Required. Sequence number of the fund to send.
+	PaymentSequence uint64 `json:"payment_sequence"` // Required. each on-chain settlement needs to increase the payment sequence by 1
+	ReserveSequence uint64 `json:"reserve_sequence"` // Required. Sequence number of the fund to send.
 }
 
-func (h *ThetaRPCHandler) CreateServicePayment(r *http.Request, args *CreateServicePaymentArgs, result *theta.CreateServicePaymentResult) (err error) {
+type CreateServicePaymentResult struct {
+	Payment string `json:"payment"` // Hex encoded half-signed payment tx bytes.
+}
+
+func (h *ThetaRPCHandler) CreateServicePayment(r *http.Request, args *CreateServicePaymentArgs, result *CreateServicePaymentResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
 	if userid == "" {
 		return errors.New("No userid is passed in.")
@@ -360,52 +385,48 @@ func (h *ThetaRPCHandler) CreateServicePayment(r *http.Request, args *CreateServ
 		return errors.New("No resource_id is provided")
 	}
 
-	if args.To == record.RaAddress || args.To == record.SaAddress {
+	if args.To == record.RaAddress.String() || args.To == record.SaAddress.String() {
 		// You don't need to pay yourself.
 		return
 	}
 
 	// Send from SendAccount
-	address, err := hex.DecodeString(record.SaAddress)
-	if err != nil {
-		return
-	}
+	address := record.SaAddress
 
 	// Wrap and add signer
-	sourceInput := types.TxInput{}
+	sourceInput := ttypes.TxInput{}
 	sourceInput.Address = address
-	sourceInput.Coins = types.Coins{types.Coin{
-		Denom:  common.DenomGammaWei,
-		Amount: args.Amount,
-	}}
-
-	targetAddress, err := hex.DecodeString(args.To)
-	if err != nil {
-		return
+	sourceInput.Coins = ttypes.Coins{
+		ThetaWei: ttypes.Zero,
+		GammaWei: big.NewInt(0).SetUint64(args.Amount),
 	}
-	targetInput := types.TxInput{
+
+	targetAddress := tcmn.HexToAddress(args.To)
+	targetInput := ttypes.TxInput{
 		Address: targetAddress,
 	}
 
-	tx := &types.ServicePaymentTx{
+	tx := &ttypes.ServicePaymentTx{
 		Source:          sourceInput,
 		Target:          targetInput,
 		PaymentSequence: args.PaymentSequence,
 		ReserveSequence: args.ReserveSequence,
-		ResourceId:      []byte(args.ResourceId),
+		ResourceID:      []byte(args.ResourceId),
 	}
-	paymentTxWrap := (&cmd.ServicePaymentTx{
-		Tx: tx,
-	}).SenderSignable()
-	paymentTxWrap.SetChainID(viper.GetString(util.CfgThetaChainId))
-	paymentTxWrap.AddSigner(record.SaPubKey)
 
-	txBytes, err := keymanager.Sign(record.SaPubKey, record.SaPrivateKey, paymentTxWrap)
+	chainID := viper.GetString(util.CfgThetaChainId)
+
+	sig, err := record.RaPrivateKey.Sign(tx.SignBytes(chainID))
 	if err != nil {
-		return
+		return err
 	}
+	tx.SetSourceSignature(sig)
 
-	result.Payment = hex.EncodeToString(txBytes)
+	signedTx, err := ttypes.TxToBytes(tx)
+	if err != nil {
+		return err
+	}
+	result.Payment = hex.EncodeToString(signedTx)
 
 	return
 }
@@ -413,13 +434,13 @@ func (h *ThetaRPCHandler) CreateServicePayment(r *http.Request, args *CreateServ
 // --------------------------- SubmitServicePayment -------------------------------
 
 type SubmitServicePaymentArgs struct {
-	Fee      types.Coin `json:"fee"`      // Optional. Transaction fee. Default to 0.
-	Gas      int64      `json:"gas"`      // Optional. Amount of gas. Default to 0.
-	Payment  string     `json:"payment"`  // Required. Hex of sender-signed payment stub.
-	Sequence int        `json:"sequence"` // Required. Sequence number of this transaction.
+	Fee      uint64 `json:"fee"`      // Optional. Transaction fee. Default to 0.
+	Gas      uint64 `json:"gas"`      // Optional. Amount of gas. Default to 0.
+	Payment  string `json:"payment"`  // Required. Hex of sender-signed payment stub.
+	Sequence uint64 `json:"sequence"` // Required. Sequence number of this transaction.
 }
 
-func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServicePaymentArgs, result *theta.SubmitServicePaymentResult) (err error) {
+func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServicePaymentArgs, result *ukulele.BroadcastRawTransactionResult) (err error) {
 	userid := r.Header.Get("X-Auth-User")
 	if userid == "" {
 		return errors.New("No userid is passed in.")
@@ -431,13 +452,9 @@ func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServ
 	}
 
 	// Receive into RecvAccount
-	address, err := hex.DecodeString(record.RaAddress)
-	if err != nil {
-		return
-	}
+	address := record.RaAddress
 
-	// Wrap and add signer
-	input := types.TxInput{
+	input := ttypes.TxInput{
 		Sequence: args.Sequence,
 	}
 	input.Address = address
@@ -451,36 +468,43 @@ func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServ
 		return
 	}
 
-	tx, err := types.TxFromBytes(paymentBytes)
+	tx, err := ttypes.TxFromBytes(paymentBytes)
 	if err != nil {
 		return
 	}
-	paymentTx := tx.(*types.ServicePaymentTx)
+	paymentTx := tx.(*ttypes.ServicePaymentTx)
 	paymentTx.Target = input
 
 	// Add minimal gas/fee.
-	if paymentTx.Gas == 0 {
-		paymentTx.Gas = 1
+	if args.Gas == 0 {
+		args.Gas = 1
 	}
-	if paymentTx.Fee.Amount == 0 {
-		paymentTx.Fee = types.Coin{Denom: "GammaWei", Amount: 1}
+	if args.Fee == 0 {
+		args.Fee = 1
 	}
 
-	paymentTxWrap := (&cmd.ServicePaymentTx{
-		Tx: paymentTx,
-	}).ReceiverSignable()
-	paymentTxWrap.SetChainID(viper.GetString(util.CfgThetaChainId))
-	paymentTxWrap.AddSigner(record.RaPubKey)
+	paymentTx.Gas = args.Gas
+	paymentTx.Fee = ttypes.Coins{
+		ThetaWei: ttypes.Zero,
+		GammaWei: big.NewInt(0).SetUint64(args.Fee),
+	}
 
 	// Sign the tx
-	txBytes, err := keymanager.Sign(record.RaPubKey, record.RaPrivateKey, paymentTxWrap)
+	chainID := viper.GetString(util.CfgThetaChainId)
+	sig, err := record.RaPrivateKey.Sign(paymentTx.SignBytes(chainID))
 	if err != nil {
-		return
+		return err
 	}
+	paymentTx.SetTargetSignature(sig)
 
-	broadcastArgs := &theta.BroadcastRawTransactionArgs{TxBytes: hex.EncodeToString(txBytes)}
+	raw, err := ttypes.TxToBytes(paymentTx)
+	if err != nil {
+		return err
+	}
+	signedTx := hex.EncodeToString(raw)
+
+	broadcastArgs := &ukulele.BroadcastRawTransactionArgs{TxBytes: signedTx}
 	resp, err := h.Client.Call("theta.BroadcastRawTransaction", broadcastArgs)
-
 	if err != nil {
 		return
 	}
@@ -496,17 +520,17 @@ func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServ
 // --------------------------- InstantiateSplitContract -------------------------------
 
 type InstantiateSplitContractArgs struct {
-	Fee          types.Coin `json:"fee"`          // Optional. Transaction fee. Default to 0.
-	Gas          int64      `json:"gas"`          // Optional. Amount of gas. Default to 0.
-	ResourceId   string     `json:"resource_id"`  // Required. The resourceId.
-	Initiator    string     `json:"initiator"`    // Required. Name of initiator account.
-	Participants []string   `json:"participants"` // Required. User IDs participating in the split.
-	Percentages  []uint     `json:"percentages"`  // Required. The split percentage for each corresponding user.
-	Duration     uint64     `json:"duration"`     // Optional. Number of blocks before the contract expires.
-	Sequence     int        `json:"sequence"`     // Optional. Sequence number of this transaction.
+	Fee          uint64   `json:"fee"`          // Optional. Transaction fee. Default to 0.
+	Gas          uint64   `json:"gas"`          // Optional. Amount of gas. Default to 0.
+	ResourceId   string   `json:"resource_id"`  // Required. The resourceId.
+	Initiator    string   `json:"initiator"`    // Required. Name of initiator account.
+	Participants []string `json:"participants"` // Required. User IDs participating in the split.
+	Percentages  []uint   `json:"percentages"`  // Required. The split percentage for each corresponding user.
+	Duration     uint64   `json:"duration"`     // Optional. Number of blocks before the contract expires.
+	Sequence     uint64   `json:"sequence"`     // Optional. Sequence number of this transaction.
 }
 
-func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *InstantiateSplitContractArgs, result *theta.InstantiateSplitContractArgsResult) (err error) {
+func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *InstantiateSplitContractArgs, result *ukulele.BroadcastRawTransactionResult) (err error) {
 	scope := r.Header.Get("X-Scope")
 	if scope != "sliver_internal" {
 		return errors.New("This API is sliver internal only")
@@ -525,8 +549,8 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 	if args.Gas == 0 {
 		args.Gas = 1
 	}
-	if args.Fee.Amount == 0 {
-		args.Fee = types.Coin{Denom: "GammaWei", Amount: 1}
+	if args.Fee == 0 {
+		args.Fee = 1
 	}
 
 	initiator, err := h.KeyManager.FindByUserId(args.Initiator)
@@ -534,31 +558,28 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 		return
 	}
 	// Use SendAccount to fund tx fee.
-	initiatorAddress, err := hex.DecodeString(initiator.SaAddress)
-	if err != nil {
-		return
-	}
+	initiatorAddress := initiator.SaAddress
 
 	sequence, err := h.getSequence(initiator.SaAddress)
 
-	initiatorInput := types.TxInput{
+	initiatorInput := ttypes.TxInput{
 		Address:  initiatorAddress,
 		Sequence: sequence + 1,
 	}
 
-	splits := []types.Split{}
+	splits := []ttypes.Split{}
 	for idx, userid := range args.Participants {
 		record, err := h.KeyManager.FindByUserId(userid)
 		if err != nil {
 			return err
 		}
-		address, err := hex.DecodeString(record.RaAddress)
+		address := record.RaAddress
 		if err != nil {
 			return err
 		}
 
 		percentage := args.Percentages[idx]
-		splits = append(splits, types.Split{
+		splits = append(splits, ttypes.Split{
 			Address:    address,
 			Percentage: percentage,
 		})
@@ -569,31 +590,33 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 		args.Duration = uint64(86400 * 365 * 10)
 	}
 
-	tx := &types.SplitContractTx{
-		Gas:        args.Gas,
-		Fee:        args.Fee,
-		ResourceId: []byte(args.ResourceId),
+	tx := &ttypes.SplitContractTx{
+		Gas: args.Gas,
+		Fee: ttypes.Coins{
+			ThetaWei: ttypes.Zero,
+			GammaWei: big.NewInt(0).SetUint64(args.Fee),
+		},
+		ResourceID: []byte(args.ResourceId),
 		Initiator:  initiatorInput,
 		Splits:     splits,
 		Duration:   args.Duration,
 	}
 
-	// Wrap and add signer
-	splitContractTx := (&cmd.SplitContractTx{
-		Tx: tx,
-	})
-
-	splitContractTx.SetChainID(viper.GetString(util.CfgThetaChainId))
-	splitContractTx.AddSigner(initiator.SaPubKey)
-
-	txBytes, err := keymanager.Sign(initiator.SaPubKey, initiator.SaPrivateKey, splitContractTx)
+	chainID := viper.GetString(util.CfgThetaChainId)
+	sig, err := initiator.RaPrivateKey.Sign(tx.SignBytes(chainID))
 	if err != nil {
-		return
+		return err
 	}
+	tx.SetSignature(initiator.RaAddress, sig)
 
-	broadcastArgs := &theta.BroadcastRawTransactionArgs{TxBytes: hex.EncodeToString(txBytes)}
+	raw, err := ttypes.TxToBytes(tx)
+	if err != nil {
+		return err
+	}
+	signedTx := hex.EncodeToString(raw)
+
+	broadcastArgs := &ukulele.BroadcastRawTransactionArgs{TxBytes: signedTx}
 	resp, err := h.Client.Call("theta.BroadcastRawTransaction", broadcastArgs)
-
 	if err != nil {
 		return
 	}
@@ -608,13 +631,13 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 
 // ------------------ helpers ---------------------
 
-func (h *ThetaRPCHandler) getSequence(address string) (sequence int, err error) {
-	resp, err := h.Client.Call("theta.GetAccount", theta.GetAccountArgs{Address: address})
+func (h *ThetaRPCHandler) getSequence(address tcmn.Address) (sequence uint64, err error) {
+	resp, err := h.Client.Call("theta.GetAccount", ukulele.GetAccountArgs{Address: address.String()})
 	if err != nil {
 		log.WithFields(log.Fields{"address": address, "error": err}).Error("Error in RPC call: theta.GetAccount()")
 		return
 	}
-	result := &theta.GetAccountResult{}
+	result := &ukulele.GetAccountResult{}
 	err = resp.GetObject(result)
 	if err != nil {
 		return

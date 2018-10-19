@@ -10,15 +10,6 @@ import:
   version: ^1.6.1
 - package: github.com/ybbus/jsonrpc
   version: ^1.0.1
-- package: github.com/thetatoken/theta
-  repo: git@github.com:thetatoken/theta-protocol-ledger
-  subpackages:
-  - abci
-  - go-crypto
-  - go-wire
-  - merkleeyes
-  - tmlibs
-  - tendermint
 - package: github.com/aws/aws-sdk-go
   version: v1.13.32
   subpackages:

@@ -1,38 +1,15 @@
 package keymanager
 
 import (
-	"encoding/hex"
-	"strings"
-
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	crypto "github.com/thetatoken/theta/go-crypto"
-	"github.com/thetatoken/theta/go-crypto/keys"
+	crypto "github.com/thetatoken/ukulele/crypto"
 	"github.com/thetatoken/vault/db"
 )
 
 type KeyManager interface {
 	Close()
 	FindByUserId(userid string) (db.Record, error)
-}
-
-func Sign(pubKey crypto.PubKey, privKey crypto.PrivKey, tx keys.Signable) ([]byte, error) {
-	sig := privKey.Sign(tx.SignBytes())
-	err := tx.Sign(pubKey, sig)
-	if err != nil {
-		return nil, err
-	}
-	return tx.TxBytes()
-}
-
-func genKey() (address string, pubkey crypto.PubKey, privKey crypto.PrivKey, seed string, err error) {
-	privKey = crypto.GenPrivKeyEd25519().Wrap()
-	pubkey = privKey.PubKey()
-	address = hex.EncodeToString(pubkey.Address())
-	codec := keys.MustLoadCodec("english")
-	words, err := codec.BytesToWords(privKey.Bytes())
-	seed = strings.Join(words, " ")
-	return
 }
 
 // ----------------- SQL KeyManager ---------------------
@@ -52,16 +29,19 @@ func (km SqlKeyManager) FindByUserId(userid string) (db.Record, error) {
 
 	if err == db.ErrNoRecord {
 		log.Printf("No record with user ID: %s. Creating keys.", userid)
-		raAddress, raPubkey, raPrivkey, _, err := genKey()
-		saAddress, saPubkey, saPrivkey, _, err := genKey()
+		raPrivkey, raPubkey, err := crypto.GenerateKeyPair()
+		if err != nil {
+			return db.Record{}, err
+		}
+		saPrivkey, saPubkey, err := crypto.GenerateKeyPair()
 		if err != nil {
 			return db.Record{}, err
 		}
 		record := db.Record{
-			RaAddress:    raAddress,
+			RaAddress:    raPubkey.Address(),
 			RaPubKey:     raPubkey,
 			RaPrivateKey: raPrivkey,
-			SaAddress:    saAddress,
+			SaAddress:    saPubkey.Address(),
 			SaPubKey:     saPubkey,
 			SaPrivateKey: saPrivkey,
 			UserID:       userid,
@@ -82,4 +62,6 @@ func (km SqlKeyManager) FindByUserId(userid string) (db.Record, error) {
 	return record, nil
 }
 
-func (km SqlKeyManager) Close() {}
+func (km SqlKeyManager) Close() {
+	km.da.Close()
+}

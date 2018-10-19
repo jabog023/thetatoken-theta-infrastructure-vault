@@ -10,8 +10,10 @@ import (
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
-	crypto "github.com/thetatoken/theta/go-crypto"
-	"github.com/thetatoken/theta/types"
+
+	"github.com/thetatoken/ukulele/common"
+	crypto "github.com/thetatoken/ukulele/crypto"
+
 	"github.com/thetatoken/vault/util"
 )
 
@@ -57,23 +59,19 @@ func (da *DAO) FindByUserId(userid string) (Record, error) {
 	case err != nil:
 		return Record{}, err
 	default:
-		raPubKey := crypto.PubKey{}
-		types.FromBytes(raPubkeyBytes, &raPubKey)
-		raPrivKey := crypto.PrivKey{}
-		types.FromBytes(raPrivkeyBytes, &raPrivKey)
-		saPubKey := crypto.PubKey{}
-		types.FromBytes(saPubkeyBytes, &saPubKey)
-		saPrivKey := crypto.PrivKey{}
-		types.FromBytes(saPrivkeyBytes, &saPrivKey)
+		raPubKey, _ := crypto.PublicKeyFromBytes(raPubkeyBytes)
+		raPrivKey, _ := crypto.PrivateKeyFromBytes(raPrivkeyBytes)
+		saPubKey, _ := crypto.PublicKeyFromBytes(saPubkeyBytes)
+		saPrivKey, _ := crypto.PrivateKeyFromBytes(saPrivkeyBytes)
 
 		record := Record{
 			UserID:       userid,
 			RaPubKey:     raPubKey,
 			RaPrivateKey: raPrivKey,
-			RaAddress:    hex.EncodeToString(raAddress),
+			RaAddress:    common.BytesToAddress(raAddress),
 			SaPubKey:     saPubKey,
 			SaPrivateKey: saPrivKey,
-			SaAddress:    hex.EncodeToString(saAddress),
+			SaAddress:    common.BytesToAddress(saAddress),
 			CreatedAt:    createAt.Time,
 			FaucetFunded: faucetFunded.Bool,
 		}
@@ -86,24 +84,12 @@ func (da *DAO) Create(record Record) error {
 
 	sm := fmt.Sprintf("INSERT INTO %s (userid, ra_pubkey, ra_privkey, ra_address, sa_pubkey, sa_privkey, sa_address) VALUES ($1, DECODE($2, 'hex'), DECODE($3, 'hex'), DECODE($4, 'hex'), DECODE($5, 'hex'), DECODE($6, 'hex'), DECODE($7, 'hex'))", tableName)
 
-	raPubkeyBytes, err := types.ToBytes(&record.RaPubKey)
-	if err != nil {
-		return err
-	}
-	raPrivBytes, err := types.ToBytes(&record.RaPrivateKey)
-	if err != nil {
-		return err
-	}
-	saPubkeyBytes, err := types.ToBytes(&record.SaPubKey)
-	if err != nil {
-		return err
-	}
-	saPrivBytes, err := types.ToBytes(&record.SaPrivateKey)
-	if err != nil {
-		return err
-	}
+	raPubkeyBytes := record.RaPubKey.ToBytes()
+	raPrivBytes := record.RaPrivateKey.ToBytes()
+	saPubkeyBytes := record.SaPubKey.ToBytes()
+	saPrivBytes := record.SaPrivateKey.ToBytes()
 
-	_, err = da.db.Exec(sm, record.UserID, hex.EncodeToString(raPubkeyBytes), hex.EncodeToString(raPrivBytes), record.RaAddress, hex.EncodeToString(saPubkeyBytes), hex.EncodeToString(saPrivBytes), record.SaAddress)
+	_, err := da.db.Exec(sm, record.UserID, hex.EncodeToString(raPubkeyBytes), hex.EncodeToString(raPrivBytes), record.RaAddress, hex.EncodeToString(saPubkeyBytes), hex.EncodeToString(saPrivBytes), record.SaAddress)
 	return err
 }
 
@@ -128,7 +114,7 @@ func (da *DAO) FindUnfundedUsers(limit int) ([]Record, error) {
 		}
 		records = append(records, Record{
 			UserID:       userid,
-			SaAddress:    hex.EncodeToString(saAddress),
+			SaAddress:    common.BytesToAddress(saAddress),
 			CreatedAt:    createdAt.Time,
 			FaucetFunded: faucetClaimed.Bool,
 		})
@@ -155,12 +141,12 @@ func (da *DAO) MarkUserFunded(address string) error {
 
 type Record struct {
 	UserID       string
-	RaAddress    string
-	RaPubKey     crypto.PubKey
-	RaPrivateKey crypto.PrivKey
-	SaAddress    string
-	SaPubKey     crypto.PubKey
-	SaPrivateKey crypto.PrivKey
+	RaAddress    common.Address
+	RaPubKey     *crypto.PublicKey
+	RaPrivateKey *crypto.PrivateKey
+	SaAddress    common.Address
+	SaPubKey     *crypto.PublicKey
+	SaPrivateKey *crypto.PrivateKey
 	Type         string
 	CreatedAt    time.Time
 	FaucetFunded bool
