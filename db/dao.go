@@ -89,7 +89,7 @@ func (da *DAO) Create(record Record) error {
 	saPubkeyBytes := record.SaPubKey.ToBytes()
 	saPrivBytes := record.SaPrivateKey.ToBytes()
 
-	_, err := da.db.Exec(sm, record.UserID, hex.EncodeToString(raPubkeyBytes), hex.EncodeToString(raPrivBytes), record.RaAddress, hex.EncodeToString(saPubkeyBytes), hex.EncodeToString(saPrivBytes), record.SaAddress)
+	_, err := da.db.Exec(sm, record.UserID, hex.EncodeToString(raPubkeyBytes), hex.EncodeToString(raPrivBytes), hex.EncodeToString(record.RaAddress.Bytes()), hex.EncodeToString(saPubkeyBytes), hex.EncodeToString(saPrivBytes), hex.EncodeToString(record.SaAddress.Bytes()))
 	return err
 }
 
