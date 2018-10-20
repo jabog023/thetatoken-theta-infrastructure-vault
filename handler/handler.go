@@ -117,6 +117,9 @@ func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *ukulele.
 		Coins:    amount.Plus(fee),
 		Sequence: args.Sequence,
 	}}
+	if args.Sequence == 1 {
+		inputs[0].PubKey = record.RaPubKey
+	}
 	outputs := []ttypes.TxOutput{{
 		Address: tcmn.HexToAddress(args.To),
 		Coins:   args.Amount,
@@ -220,6 +223,9 @@ func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, re
 		Sequence: args.Sequence,
 		Address:  record.SaAddress,
 	}
+	if args.Sequence == 1 {
+		input.PubKey = record.SaPubKey
+	}
 
 	var resourceIds []tcmn.Bytes
 	for _, ridStr := range args.ResourceIds {
@@ -244,11 +250,11 @@ func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, re
 
 	chainID := viper.GetString(util.CfgThetaChainId)
 
-	sig, err := record.RaPrivateKey.Sign(tx.SignBytes(chainID))
+	sig, err := record.SaPrivateKey.Sign(tx.SignBytes(chainID))
 	if err != nil {
 		return err
 	}
-	tx.SetSignature(record.RaAddress, sig)
+	tx.SetSignature(record.SaAddress, sig)
 
 	raw, err := ttypes.TxToBytes(tx)
 	if err != nil {
@@ -313,6 +319,9 @@ func (h *ThetaRPCHandler) ReleaseFund(r *http.Request, args *ReleaseFundArgs, re
 	input := ttypes.TxInput{
 		Sequence: args.Sequence,
 		Address:  record.SaAddress,
+	}
+	if args.Sequence == 1 {
+		input.PubKey = record.SaPubKey
 	}
 
 	tx := &ttypes.ReleaseFundTx{
@@ -412,7 +421,7 @@ func (h *ThetaRPCHandler) CreateServicePayment(r *http.Request, args *CreateServ
 
 	chainID := viper.GetString(util.CfgThetaChainId)
 
-	sig, err := record.RaPrivateKey.Sign(tx.SignBytes(chainID))
+	sig, err := record.RaPrivateKey.Sign(tx.SourceSignBytes(chainID))
 	if err != nil {
 		return err
 	}
@@ -423,7 +432,6 @@ func (h *ThetaRPCHandler) CreateServicePayment(r *http.Request, args *CreateServ
 		return err
 	}
 	result.Payment = hex.EncodeToString(signedTx)
-
 	return
 }
 
@@ -454,6 +462,9 @@ func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServ
 		Sequence: args.Sequence,
 	}
 	input.Address = address
+	if args.Sequence == 1 {
+		input.PubKey = record.RaPubKey
+	}
 
 	if args.Payment == "" {
 		return errors.Errorf("Payment is empty")
@@ -487,7 +498,7 @@ func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServ
 
 	// Sign the tx
 	chainID := viper.GetString(util.CfgThetaChainId)
-	sig, err := record.RaPrivateKey.Sign(paymentTx.SignBytes(chainID))
+	sig, err := record.RaPrivateKey.Sign(paymentTx.TargetSignBytes(chainID))
 	if err != nil {
 		return err
 	}
@@ -561,6 +572,9 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 	initiatorInput := ttypes.TxInput{
 		Address:  initiatorAddress,
 		Sequence: sequence + 1,
+	}
+	if args.Sequence == 1 {
+		initiatorInput.PubKey = initiator.SaPubKey
 	}
 
 	splits := []ttypes.Split{}

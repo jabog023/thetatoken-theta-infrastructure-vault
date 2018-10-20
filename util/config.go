@@ -36,7 +36,7 @@ func ReadConfig() {
 	viper.SetDefault(CfgDebug, false)
 	viper.SetDefault(CfgServerPort, "20000")
 	viper.SetDefault(CfgServerMaxConnections, 200)
-	viper.SetDefault(CfgThetaChainId, "test_chain_id")
+	viper.SetDefault(CfgThetaChainId, "")
 	viper.SetDefault(CfgThetaDefaultReserveDurationSecs, 900)
 	viper.SetDefault(CfgFaucetGrantsPerBatch, 100)
 	viper.SetDefault(CfgFaucetBatchDuration, 3600)
