@@ -66,13 +66,12 @@ func corsMiddleware(handler http.Handler) http.Handler {
 	})
 }
 
-func startServer(da *db.DAO) {
+func startServer(da *db.DAO, client *rpcc.RPCClient) {
 	logger := log.WithFields(log.Fields{"method": "rpc.startServer"})
 
 	s := rpc.NewServer()
 	s.RegisterCodec(json.NewCodec(), "application/json")
 	s.RegisterCodec(json.NewCodec(), "application/json;charset=UTF-8")
-	client := rpcc.NewRPCClient(viper.GetString(util.CfgThetaRPCEndpoint))
 
 	keyManager, err := keymanager.NewSqlKeyManager(da)
 
@@ -102,8 +101,8 @@ func startServer(da *db.DAO) {
 	return
 }
 
-func startFaucet(da *db.DAO) {
-	f := faucet.NewFaucetManager(da)
+func startFaucet(da *db.DAO, client *rpcc.RPCClient) {
+	f := faucet.NewFaucetManager(da, client)
 	f.Process()
 }
 
@@ -117,8 +116,10 @@ func main() {
 	}
 	defer da.Close()
 
-	go startFaucet(da)
-	go startServer(da)
+	client := rpcc.NewRPCClient(viper.GetString(util.CfgThetaRPCEndpoint))
+
+	go startFaucet(da, client)
+	go startServer(da, client)
 
 	select {}
 }

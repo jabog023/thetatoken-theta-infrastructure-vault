@@ -1,25 +1,32 @@
 package faucet
 
 import (
+	"fmt"
 	"os/exec"
-	"strconv"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"github.com/thetatoken/ukulele/common"
 	"github.com/thetatoken/vault/db"
 	"github.com/thetatoken/vault/util"
+	rpcc "github.com/ybbus/jsonrpc"
 )
 
 type FaucetManager struct {
 	da                   *db.DAO
+	client               *rpcc.RPCClient
 	processedUserInBatch int
+	sequence             uint64
+	lastSeqUpdate        time.Time
 }
 
-func NewFaucetManager(da *db.DAO) *FaucetManager {
+func NewFaucetManager(da *db.DAO, client *rpcc.RPCClient) *FaucetManager {
 	return &FaucetManager{
 		da:                   da,
+		client:               client,
 		processedUserInBatch: 0,
+		sequence:             0,
 	}
 }
 
@@ -66,7 +73,7 @@ func (fr *FaucetManager) tryGrantFunds() {
 	count, errCount := 0, 0
 	for _, record := range records {
 		logger.WithFields(log.Fields{"record": record}).Info("Process faucet queue item")
-		err := fr.addInitalFund(record.SaAddress.String())
+		err := fr.addInitalFund(record.SaAddress)
 		if err != nil {
 			errCount++
 		}
@@ -76,7 +83,7 @@ func (fr *FaucetManager) tryGrantFunds() {
 	logger.Infof("Processed %d users with %d failures. Sleeping...", count, errCount)
 }
 
-func (fr *FaucetManager) addInitalFund(address string) error {
+func (fr *FaucetManager) addInitalFund(address common.Address) error {
 	thetaAmount := viper.GetInt64(util.CfgFaucetThetaAmount)
 	gammaAmount := viper.GetInt64(util.CfgFaucetGammaAmount)
 
@@ -88,17 +95,29 @@ func (fr *FaucetManager) addInitalFund(address string) error {
 
 	err := fr.da.MarkUserFunded(address)
 	if err != nil {
-		logger.WithFields(log.Fields{"err": err}).Error("Failed to mark user as funded")
+		logger.WithFields(log.Fields{"error": err}).Error("Failed to mark user as funded")
 		return err
 	}
 
-	logger.Info("Executing add fund command")
-	cmd := exec.Command("add_fund.sh", address, strconv.FormatInt(thetaAmount, 10), strconv.FormatInt(gammaAmount, 10))
-	err = cmd.Run()
+	faucetAddress := viper.GetString(util.CfgFaucetAddress)
+	if fr.sequence == 0 || time.Since(fr.lastSeqUpdate) > 30*time.Second {
+		if faucetAddress == "" {
+			log.Panic("faucet address is not configured")
+		}
+		fr.sequence, err = util.GetSequence(fr.client, common.HexToAddress(faucetAddress))
+		if err != nil {
+			logger.WithFields(log.Fields{"error": err, "faucet": faucetAddress}).Error("Failed to get seqeuence number")
+		}
+		fr.lastSeqUpdate = time.Now()
+	}
+	logger.WithFields(log.Fields{"sequence": fr.sequence}).Info("Executing add fund command")
+	cmd := exec.Command("add_fund.sh", faucetAddress, address.Hex(), fmt.Sprintf("%d", thetaAmount), fmt.Sprintf("%d", gammaAmount), fmt.Sprintf("%d", fr.sequence+1))
+	out, err := cmd.CombinedOutput()
 	if err != nil {
-		logger.WithFields(log.Fields{"err": err, "output": err}).Error("Add fund command failed")
+		logger.WithFields(log.Fields{"err": err, "output": string(out)}).Error("Add fund command failed")
 		return err
 	}
 	log.Info("Successfully added fund")
+	fr.sequence++
 	return err
 }

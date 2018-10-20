@@ -24,6 +24,7 @@ const (
 	CfgFaucetWakeupInterval            = "faucet.sleep_between_wakeups_secs"
 	CfgFaucetThetaAmount               = "faucet.theta"
 	CfgFaucetGammaAmount               = "faucet.gamma"
+	CfgFaucetAddress                   = "faucet.address"
 )
 
 func ReadConfig() {

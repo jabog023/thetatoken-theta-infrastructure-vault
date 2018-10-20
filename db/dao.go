@@ -125,16 +125,20 @@ func (da *DAO) FindUnfundedUsers(limit int) ([]Record, error) {
 	return records, nil
 }
 
-func (da *DAO) MarkUserFunded(address string) error {
+func (da *DAO) MarkUserFunded(address common.Address) error {
 	tableName := viper.GetString(util.CfgDbTable)
 
 	sm := fmt.Sprintf("UPDATE %s SET faucet_fund_claimed=TRUE WHERE encode(sa_address::bytea,'hex')=$1", tableName)
-	res, err := da.db.Exec(sm, address)
+	res, err := da.db.Exec(sm, hex.EncodeToString(address.Bytes()))
 	if err != nil {
 		return errors.Wrap(err, "Failed to update database")
 	}
-	if n, err := res.RowsAffected(); err != nil || n != 1 {
+	n, err := res.RowsAffected()
+	if err != nil {
 		return errors.Wrap(err, "Failed to update database")
+	}
+	if n != 1 {
+		return fmt.Errorf("Failed to update database: affected rows = %v\n", n)
 	}
 	return nil
 }

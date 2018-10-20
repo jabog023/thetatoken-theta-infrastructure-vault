@@ -6,25 +6,20 @@ import (
 	"net/http"
 
 	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	tcmn "github.com/thetatoken/ukulele/common"
 	ttypes "github.com/thetatoken/ukulele/ledger/types"
 	ukulele "github.com/thetatoken/ukulele/rpc"
 	"github.com/thetatoken/vault/keymanager"
 	"github.com/thetatoken/vault/util"
-	rpcc "github.com/ybbus/jsonrpc"
 )
 
-type RPCClient interface {
-	Call(method string, params ...interface{}) (*rpcc.RPCResponse, error)
-}
 type ThetaRPCHandler struct {
-	Client     RPCClient
+	Client     util.RPCClient
 	KeyManager keymanager.KeyManager
 }
 
-func NewRPCHandler(client RPCClient, km keymanager.KeyManager) *ThetaRPCHandler {
+func NewRPCHandler(client util.RPCClient, km keymanager.KeyManager) *ThetaRPCHandler {
 	return &ThetaRPCHandler{
 		Client:     client,
 		KeyManager: km,
@@ -78,6 +73,7 @@ func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, resu
 	}
 	result.RecvAccount = recvAccount
 
+	result.UserID = userid
 	return
 }
 
@@ -560,7 +556,7 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 	// Use SendAccount to fund tx fee.
 	initiatorAddress := initiator.SaAddress
 
-	sequence, err := h.getSequence(initiator.SaAddress)
+	sequence, err := util.GetSequence(h.Client, initiator.SaAddress)
 
 	initiatorInput := ttypes.TxInput{
 		Address:  initiatorAddress,
@@ -627,25 +623,4 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 
 	err = resp.GetObject(&result)
 	return
-}
-
-// ------------------ helpers ---------------------
-
-func (h *ThetaRPCHandler) getSequence(address tcmn.Address) (sequence uint64, err error) {
-	resp, err := h.Client.Call("theta.GetAccount", ukulele.GetAccountArgs{Address: address.String()})
-	if err != nil {
-		log.WithFields(log.Fields{"address": address, "error": err}).Error("Error in RPC call: theta.GetAccount()")
-		return
-	}
-	result := &ukulele.GetAccountResult{}
-	err = resp.GetObject(result)
-	if err != nil {
-		return
-	}
-	if result.Account == nil {
-		log.WithFields(log.Fields{"address": address, "error": err}).Error("No result from RPC call: theta.GetAccount()")
-		err = errors.New("Error in getting account sequence number")
-		return 0, err
-	}
-	return result.Sequence, err
 }
