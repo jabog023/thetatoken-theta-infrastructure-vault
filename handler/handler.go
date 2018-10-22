@@ -10,6 +10,7 @@ import (
 	tcmn "github.com/thetatoken/ukulele/common"
 	ttypes "github.com/thetatoken/ukulele/ledger/types"
 	ukulele "github.com/thetatoken/ukulele/rpc"
+	"github.com/thetatoken/vault/db"
 	"github.com/thetatoken/vault/keymanager"
 	"github.com/thetatoken/vault/util"
 )
@@ -49,15 +50,11 @@ func (h *ThetaRPCHandler) getAccount(address string) (*ukulele.GetAccountResult,
 }
 
 func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, result *GetAccountResult) (err error) {
-	userid := r.Header.Get("X-Auth-User")
-	if userid == "" {
-		return errors.New("No userid is passed in")
-	}
-
-	record, err := h.KeyManager.FindByUserId(userid)
+	record, err := h.getRecord(r)
 	if err != nil {
-		return errors.Wrapf(err, "Failed to find userid: %v", userid)
+		return errors.Wrapf(err, "Failed to find userid: %v", record.UserID)
 	}
+	userid := record.UserID
 
 	// Load SendAccount
 	sendAccount, err := h.getAccount(record.SaAddress.String())
@@ -88,16 +85,19 @@ type SendArgs struct {
 }
 
 func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *ukulele.BroadcastRawTransactionResult) (err error) {
-	userid := r.Header.Get("X-Auth-User")
-	if userid == "" {
-		return errors.New("No userid is passed in")
-	}
-
-	record, err := h.KeyManager.FindByUserId(userid)
+	record, err := h.getRecord(r)
 	if err != nil {
 		return
 	}
 
+	signedTx, err := prepareSendTx(args, record, viper.GetString(util.CfgThetaChainId))
+	if err != nil {
+		return err
+	}
+	return h.broadcastTx(signedTx, result)
+}
+
+func prepareSendTx(args *SendArgs, record db.Record, chainID string) (*ttypes.SendTx, error) {
 	amount := args.Amount.NoNil()
 
 	// Add minimal gas/fee.
@@ -131,31 +131,12 @@ func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *ukulele.
 		Outputs: outputs,
 	}
 
-	chainID := viper.GetString(util.CfgThetaChainId)
 	sig, err := record.RaPrivateKey.Sign(sendTx.SignBytes(chainID))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	sendTx.SetSignature(record.RaAddress, sig)
-
-	raw, err := ttypes.TxToBytes(sendTx)
-	if err != nil {
-		return err
-	}
-	signedTx := hex.EncodeToString(raw)
-
-	broadcastArgs := &ukulele.BroadcastRawTransactionArgs{TxBytes: signedTx}
-	resp, err := h.Client.Call("theta.BroadcastRawTransaction", broadcastArgs)
-	if err != nil {
-		return
-	}
-	if resp.Error != nil {
-		err = resp.Error
-		return
-	}
-
-	err = resp.GetObject(&result)
-	return
+	return sendTx, nil
 }
 
 // --------------------------- BroadcastRawTransaction ----------------------------
@@ -192,16 +173,25 @@ type ReserveFundResult struct {
 }
 
 func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, result *ReserveFundResult) (err error) {
-	userid := r.Header.Get("X-Auth-User")
-	if userid == "" {
-		return errors.New("No userid is passed in.")
-	}
-
-	record, err := h.KeyManager.FindByUserId(userid)
+	record, err := h.getRecord(r)
 	if err != nil {
 		return
 	}
 
+	signedTx, err := prepareReserveFundTx(args, record, viper.GetString(util.CfgThetaChainId))
+	if err != nil {
+		return err
+	}
+	err = h.broadcastTx(signedTx, result)
+	if err != nil {
+		return err
+	}
+
+	result.ReserveSequence = args.Sequence
+	return nil
+}
+
+func prepareReserveFundTx(args *ReserveFundArgs, record db.Record, chainID string) (*ttypes.ReserveFundTx, error) {
 	if args.Duration == 0 {
 		args.Duration = uint64(viper.GetInt64(util.CfgThetaDefaultReserveDurationSecs))
 	}
@@ -248,38 +238,13 @@ func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, re
 		Duration:    args.Duration,
 	}
 
-	chainID := viper.GetString(util.CfgThetaChainId)
-
 	sig, err := record.SaPrivateKey.Sign(tx.SignBytes(chainID))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	tx.SetSignature(record.SaAddress, sig)
 
-	raw, err := ttypes.TxToBytes(tx)
-	if err != nil {
-		return err
-	}
-	signedTx := hex.EncodeToString(raw)
-
-	broadcastArgs := &ukulele.BroadcastRawTransactionArgs{
-		TxBytes: signedTx,
-	}
-	resp, err := h.Client.Call("theta.BroadcastRawTransaction", broadcastArgs)
-	if err != nil {
-		return
-	}
-	if resp.Error != nil {
-		err = resp.Error
-		return
-	}
-
-	err = resp.GetObject(&result)
-
-	// Set reserve_sequence to the tx sequence number.
-	result.ReserveSequence = args.Sequence
-
-	return
+	return tx, nil
 }
 
 // --------------------------- Release -------------------------------
@@ -297,16 +262,19 @@ type ReleaseFundResult struct {
 }
 
 func (h *ThetaRPCHandler) ReleaseFund(r *http.Request, args *ReleaseFundArgs, result *ReleaseFundResult) (err error) {
-	userid := r.Header.Get("X-Auth-User")
-	if userid == "" {
-		return errors.New("No userid is passed in.")
-	}
-
-	record, err := h.KeyManager.FindByUserId(userid)
+	record, err := h.getRecord(r)
 	if err != nil {
 		return
 	}
 
+	signedTx, err := prepareReleaseFundTx(args, record, viper.GetString(util.CfgThetaChainId))
+	if err != nil {
+		return err
+	}
+	return h.broadcastTx(signedTx, result)
+}
+
+func prepareReleaseFundTx(args *ReleaseFundArgs, record db.Record, chainID string) (*ttypes.ReleaseFundTx, error) {
 	// Add minimal gas/fee.
 	if args.Gas == 0 {
 		args.Gas = 1
@@ -334,31 +302,12 @@ func (h *ThetaRPCHandler) ReleaseFund(r *http.Request, args *ReleaseFundArgs, re
 		ReserveSequence: args.ReserveSequence,
 	}
 
-	chainID := viper.GetString(util.CfgThetaChainId)
-
 	sig, err := record.RaPrivateKey.Sign(tx.SignBytes(chainID))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	tx.SetSignature(record.SaAddress, sig)
-	raw, err := ttypes.TxToBytes(tx)
-	if err != nil {
-		return err
-	}
-	signedTx := hex.EncodeToString(raw)
-
-	broadcastArgs := &ukulele.BroadcastRawTransactionArgs{TxBytes: signedTx}
-	resp, err := h.Client.Call("theta.BroadcastRawTransaction", broadcastArgs)
-	if err != nil {
-		return
-	}
-	if resp.Error != nil {
-		err = resp.Error
-		return
-	}
-
-	err = resp.GetObject(&result)
-	return
+	return tx, nil
 }
 
 // --------------------------- CreateServicePayment -------------------------------
@@ -376,23 +325,26 @@ type CreateServicePaymentResult struct {
 }
 
 func (h *ThetaRPCHandler) CreateServicePayment(r *http.Request, args *CreateServicePaymentArgs, result *CreateServicePaymentResult) (err error) {
-	userid := r.Header.Get("X-Auth-User")
-	if userid == "" {
-		return errors.New("No userid is passed in.")
-	}
-
-	record, err := h.KeyManager.FindByUserId(userid)
+	record, err := h.getRecord(r)
 	if err != nil {
 		return
 	}
+	signedTx, err := prepareCreateServicePaymentTx(args, record, viper.GetString(util.CfgThetaChainId))
+	if err != nil {
+		return
+	}
+	result.Payment = signedTx
+	return nil
+}
 
+func prepareCreateServicePaymentTx(args *CreateServicePaymentArgs, record db.Record, chainID string) (string, error) {
 	if args.ResourceId == "" {
-		return errors.New("No resource_id is provided")
+		return "", errors.New("No resource_id is provided")
 	}
 
 	if args.To == record.RaAddress.String() || args.To == record.SaAddress.String() {
 		// You don't need to pay yourself.
-		return
+		return "", nil
 	}
 
 	// Send from SendAccount
@@ -419,20 +371,16 @@ func (h *ThetaRPCHandler) CreateServicePayment(r *http.Request, args *CreateServ
 		ResourceID:      []byte(args.ResourceId),
 	}
 
-	chainID := viper.GetString(util.CfgThetaChainId)
-
-	sig, err := record.RaPrivateKey.Sign(tx.SourceSignBytes(chainID))
+	sig, err := record.SaPrivateKey.Sign(tx.SourceSignBytes(chainID))
 	if err != nil {
-		return err
+		return "", err
 	}
 	tx.SetSourceSignature(sig)
-
 	signedTx, err := ttypes.TxToBytes(tx)
 	if err != nil {
-		return err
+		return "", err
 	}
-	result.Payment = hex.EncodeToString(signedTx)
-	return
+	return hex.EncodeToString(signedTx), nil
 }
 
 // --------------------------- SubmitServicePayment -------------------------------
@@ -445,16 +393,18 @@ type SubmitServicePaymentArgs struct {
 }
 
 func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServicePaymentArgs, result *ukulele.BroadcastRawTransactionResult) (err error) {
-	userid := r.Header.Get("X-Auth-User")
-	if userid == "" {
-		return errors.New("No userid is passed in.")
-	}
-
-	record, err := h.KeyManager.FindByUserId(userid)
+	record, err := h.getRecord(r)
 	if err != nil {
 		return
 	}
+	signedTx, err := prepareSubmitServicePaymentTx(args, record, viper.GetString(util.CfgThetaChainId))
+	if err != nil {
+		return err
+	}
+	return h.broadcastTx(signedTx, result)
+}
 
+func prepareSubmitServicePaymentTx(args *SubmitServicePaymentArgs, record db.Record, chainID string) (*ttypes.ServicePaymentTx, error) {
 	// Receive into RecvAccount
 	address := record.RaAddress
 
@@ -467,17 +417,17 @@ func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServ
 	}
 
 	if args.Payment == "" {
-		return errors.Errorf("Payment is empty")
+		return nil, errors.Errorf("Payment is empty")
 	}
 
 	paymentBytes, err := hex.DecodeString(args.Payment)
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	tx, err := ttypes.TxFromBytes(paymentBytes)
 	if err != nil {
-		return
+		return nil, err
 	}
 	paymentTx := tx.(*ttypes.ServicePaymentTx)
 	paymentTx.Target = input
@@ -497,31 +447,12 @@ func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServ
 	}
 
 	// Sign the tx
-	chainID := viper.GetString(util.CfgThetaChainId)
 	sig, err := record.RaPrivateKey.Sign(paymentTx.TargetSignBytes(chainID))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	paymentTx.SetTargetSignature(sig)
-
-	raw, err := ttypes.TxToBytes(paymentTx)
-	if err != nil {
-		return err
-	}
-	signedTx := hex.EncodeToString(raw)
-
-	broadcastArgs := &ukulele.BroadcastRawTransactionArgs{TxBytes: signedTx}
-	resp, err := h.Client.Call("theta.BroadcastRawTransaction", broadcastArgs)
-	if err != nil {
-		return
-	}
-	if resp.Error != nil {
-		err = resp.Error
-		return
-	}
-
-	err = resp.GetObject(&result)
-	return
+	return paymentTx, nil
 }
 
 // --------------------------- InstantiateSplitContract -------------------------------
@@ -538,19 +469,36 @@ type InstantiateSplitContractArgs struct {
 }
 
 func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *InstantiateSplitContractArgs, result *ukulele.BroadcastRawTransactionResult) (err error) {
-	scope := r.Header.Get("X-Scope")
-	if scope != "sliver_internal" {
-		return errors.New("This API is sliver internal only")
-	}
-
-	if args.ResourceId == "" {
-		return errors.New("No resource_id is passed in")
-	}
 	if args.Initiator == "" {
 		return errors.New("No initiator is passed in")
 	}
+	initiator, err := h.KeyManager.FindByUserId(args.Initiator)
+	if err != nil {
+		return
+	}
+	participants := []db.Record{}
+	for _, userid := range args.Participants {
+		record, err := h.KeyManager.FindByUserId(userid)
+		if err != nil {
+			return err
+		}
+		participants = append(participants, record)
+	}
+	sequence, err := util.GetSequence(h.Client, initiator.SaAddress)
+	signedTx, err := prepareInstantiateSplitContractTx(args, initiator, sequence, participants, viper.GetString(util.CfgThetaChainId))
+	if err != nil {
+		return err
+	}
+	return h.broadcastTx(signedTx, result)
+}
+
+func prepareInstantiateSplitContractTx(args *InstantiateSplitContractArgs, initiator db.Record, initiatorSeq uint64, participants []db.Record, chainID string) (*ttypes.SplitContractTx, error) {
+	if args.ResourceId == "" {
+		return nil, errors.New("No resource_id is passed in")
+	}
+
 	if len(args.Participants) != len(args.Percentages) {
-		return errors.New("Length of participants doesn't match with length of percentages")
+		return nil, errors.New("Length of participants doesn't match with length of percentages")
 	}
 	// Add minimal gas/fee.
 	if args.Gas == 0 {
@@ -560,34 +508,20 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 		args.Fee = 1
 	}
 
-	initiator, err := h.KeyManager.FindByUserId(args.Initiator)
-	if err != nil {
-		return
-	}
 	// Use SendAccount to fund tx fee.
 	initiatorAddress := initiator.SaAddress
 
-	sequence, err := util.GetSequence(h.Client, initiator.SaAddress)
-
 	initiatorInput := ttypes.TxInput{
 		Address:  initiatorAddress,
-		Sequence: sequence + 1,
+		Sequence: initiatorSeq + 1,
 	}
 	if args.Sequence == 1 {
 		initiatorInput.PubKey = initiator.SaPubKey
 	}
 
 	splits := []ttypes.Split{}
-	for idx, userid := range args.Participants {
-		record, err := h.KeyManager.FindByUserId(userid)
-		if err != nil {
-			return err
-		}
+	for idx, record := range participants {
 		address := record.RaAddress
-		if err != nil {
-			return err
-		}
-
 		percentage := args.Percentages[idx]
 		splits = append(splits, ttypes.Split{
 			Address:    address,
@@ -612,29 +546,44 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 		Duration:   args.Duration,
 	}
 
-	chainID := viper.GetString(util.CfgThetaChainId)
 	sig, err := initiator.RaPrivateKey.Sign(tx.SignBytes(chainID))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	tx.SetSignature(initiator.RaAddress, sig)
+	return tx, nil
+}
 
+//
+// --------------------------- helpers -------------------------------
+//
+
+// getRecord retrieves user record from database based on user id in request header.
+func (h *ThetaRPCHandler) getRecord(r *http.Request) (record db.Record, err error) {
+
+	userid := r.Header.Get("X-Auth-User")
+	if userid == "" {
+		err = errors.New("No userid is passed in")
+		return
+	}
+	return h.KeyManager.FindByUserId(userid)
+}
+
+// broadcastTx takes a signed TX and broadcast to Theta backend. The response is filled into
+// the result argument.
+func (h *ThetaRPCHandler) broadcastTx(tx ttypes.Tx, result interface{}) error {
 	raw, err := ttypes.TxToBytes(tx)
 	if err != nil {
 		return err
 	}
 	signedTx := hex.EncodeToString(raw)
-
 	broadcastArgs := &ukulele.BroadcastRawTransactionArgs{TxBytes: signedTx}
 	resp, err := h.Client.Call("theta.BroadcastRawTransaction", broadcastArgs)
 	if err != nil {
-		return
+		return err
 	}
 	if resp.Error != nil {
-		err = resp.Error
-		return
+		return resp.Error
 	}
-
-	err = resp.GetObject(&result)
-	return
+	return resp.GetObject(&result)
 }
