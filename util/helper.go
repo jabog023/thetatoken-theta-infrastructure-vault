@@ -17,15 +17,18 @@ func GetSequence(client RPCClient, address common.Address) (sequence uint64, err
 	resp, err := client.Call("theta.GetAccount", ukulele.GetAccountArgs{Address: address.String()})
 	if err != nil {
 		log.WithFields(log.Fields{"address": address, "error": err}).Error("Error in RPC call: theta.GetAccount()")
-		return
+		return 0, err
+	}
+	if resp.Error != nil {
+		return 0, resp.Error
 	}
 	result := &ukulele.GetAccountResult{}
 	err = resp.GetObject(result)
 	if err != nil {
-		return
+		return 0, err
 	}
 	if result.Account == nil {
-		log.WithFields(log.Fields{"address": address, "error": err}).Error("No result from RPC call: theta.GetAccount()")
+		log.WithFields(log.Fields{"address": address, "error": err, "res": resp}).Error("No result from RPC call: theta.GetAccount()")
 		err = errors.New("Error in getting account sequence number")
 		return 0, err
 	}

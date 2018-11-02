@@ -17,8 +17,6 @@ type FaucetManager struct {
 	da                   *db.DAO
 	client               *rpcc.RPCClient
 	processedUserInBatch int
-	sequence             uint64
-	lastSeqUpdate        time.Time
 }
 
 func NewFaucetManager(da *db.DAO, client *rpcc.RPCClient) *FaucetManager {
@@ -26,7 +24,6 @@ func NewFaucetManager(da *db.DAO, client *rpcc.RPCClient) *FaucetManager {
 		da:                   da,
 		client:               client,
 		processedUserInBatch: 0,
-		sequence:             0,
 	}
 }
 
@@ -100,24 +97,24 @@ func (fr *FaucetManager) addInitalFund(address common.Address) error {
 	}
 
 	faucetAddress := viper.GetString(util.CfgFaucetAddress)
-	if fr.sequence == 0 || time.Since(fr.lastSeqUpdate) > 30*time.Second {
-		if faucetAddress == "" {
-			log.Panic("faucet address is not configured")
-		}
-		fr.sequence, err = util.GetSequence(fr.client, common.HexToAddress(faucetAddress))
-		if err != nil {
-			logger.WithFields(log.Fields{"error": err, "faucet": faucetAddress}).Error("Failed to get seqeuence number")
-		}
-		fr.lastSeqUpdate = time.Now()
+	if faucetAddress == "" {
+		log.Panic("faucet address is not configured")
 	}
-	logger.WithFields(log.Fields{"sequence": fr.sequence}).Info("Executing add fund command")
-	cmd := exec.Command("add_fund.sh", faucetAddress, address.Hex(), fmt.Sprintf("%d", thetaAmount), fmt.Sprintf("%d", gammaAmount), fmt.Sprintf("%d", fr.sequence+1))
+	sequence, err := util.GetSequence(fr.client, common.HexToAddress(faucetAddress))
+
+	if err != nil {
+		logger.WithFields(log.Fields{"error": err, "faucet": faucetAddress}).Error("Failed to get seqeuence number")
+	}
+	logger.WithFields(log.Fields{"sequence": sequence}).Info("Executing add fund command")
+	cmd := exec.Command("add_fund.sh", faucetAddress, address.Hex(),
+		fmt.Sprintf("%d", thetaAmount), fmt.Sprintf("%d", gammaAmount),
+		fmt.Sprintf("%d", sequence+1))
+
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		logger.WithFields(log.Fields{"err": err, "output": string(out)}).Error("Add fund command failed")
 		return err
 	}
 	log.Info("Successfully added fund")
-	fr.sequence++
 	return err
 }
