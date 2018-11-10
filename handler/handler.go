@@ -100,10 +100,7 @@ func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *ukulele.
 func prepareSendTx(args *SendArgs, record db.Record, chainID string) (*ttypes.SendTx, error) {
 	amount := args.Amount.NoNil()
 
-	// Add minimal gas/fee.
-	if args.Gas == 0 {
-		args.Gas = 1
-	}
+	// Add minimal fee.
 	if args.Fee == 0 {
 		args.Fee = 1
 	}
@@ -126,7 +123,6 @@ func prepareSendTx(args *SendArgs, record db.Record, chainID string) (*ttypes.Se
 	}}
 	sendTx := &ttypes.SendTx{
 		Fee:     fee,
-		Gas:     args.Gas,
 		Inputs:  inputs,
 		Outputs: outputs,
 	}
@@ -196,10 +192,7 @@ func prepareReserveFundTx(args *ReserveFundArgs, record db.Record, chainID strin
 		args.Duration = uint64(viper.GetInt64(util.CfgThetaDefaultReserveDurationSecs))
 	}
 
-	// Add minimal gas/fee.
-	if args.Gas == 0 {
-		args.Gas = 1
-	}
+	// Add minimal fee.
 	if args.Fee == 0 {
 		args.Fee = 1
 	}
@@ -227,7 +220,6 @@ func prepareReserveFundTx(args *ReserveFundArgs, record db.Record, chainID strin
 		GammaWei: big.NewInt(0).SetUint64(args.Collateral),
 	}
 	tx := &ttypes.ReserveFundTx{
-		Gas: args.Gas,
 		Fee: ttypes.Coins{
 			ThetaWei: ttypes.Zero,
 			GammaWei: big.NewInt(0).SetUint64(args.Fee),
@@ -275,10 +267,7 @@ func (h *ThetaRPCHandler) ReleaseFund(r *http.Request, args *ReleaseFundArgs, re
 }
 
 func prepareReleaseFundTx(args *ReleaseFundArgs, record db.Record, chainID string) (*ttypes.ReleaseFundTx, error) {
-	// Add minimal gas/fee.
-	if args.Gas == 0 {
-		args.Gas = 1
-	}
+	// Add minimal fee.
 	if args.Fee == 0 {
 		args.Fee = 1
 	}
@@ -293,7 +282,6 @@ func prepareReleaseFundTx(args *ReleaseFundArgs, record db.Record, chainID strin
 	}
 
 	tx := &ttypes.ReleaseFundTx{
-		Gas: args.Gas,
 		Fee: ttypes.Coins{
 			ThetaWei: ttypes.Zero,
 			GammaWei: big.NewInt(0).SetUint64(args.Fee),
@@ -440,7 +428,6 @@ func prepareSubmitServicePaymentTx(args *SubmitServicePaymentArgs, record db.Rec
 		args.Fee = 1
 	}
 
-	paymentTx.Gas = args.Gas
 	paymentTx.Fee = ttypes.Coins{
 		ThetaWei: ttypes.Zero,
 		GammaWei: big.NewInt(0).SetUint64(args.Fee),
@@ -492,7 +479,7 @@ func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *Instan
 	return h.broadcastTx(signedTx, result)
 }
 
-func prepareInstantiateSplitContractTx(args *InstantiateSplitContractArgs, initiator db.Record, initiatorSeq uint64, participants []db.Record, chainID string) (*ttypes.SplitContractTx, error) {
+func prepareInstantiateSplitContractTx(args *InstantiateSplitContractArgs, initiator db.Record, initiatorSeq uint64, participants []db.Record, chainID string) (*ttypes.SplitRuleTx, error) {
 	if args.ResourceId == "" {
 		return nil, errors.New("No resource_id is passed in")
 	}
@@ -500,10 +487,7 @@ func prepareInstantiateSplitContractTx(args *InstantiateSplitContractArgs, initi
 	if len(args.Participants) != len(args.Percentages) {
 		return nil, errors.New("Length of participants doesn't match with length of percentages")
 	}
-	// Add minimal gas/fee.
-	if args.Gas == 0 {
-		args.Gas = 1
-	}
+	// Add minimal fee.
 	if args.Fee == 0 {
 		args.Fee = 1
 	}
@@ -534,8 +518,7 @@ func prepareInstantiateSplitContractTx(args *InstantiateSplitContractArgs, initi
 		args.Duration = uint64(86400 * 365 * 10)
 	}
 
-	tx := &ttypes.SplitContractTx{
-		Gas: args.Gas,
+	tx := &ttypes.SplitRuleTx{
 		Fee: ttypes.Coins{
 			ThetaWei: ttypes.Zero,
 			GammaWei: big.NewInt(0).SetUint64(args.Fee),
