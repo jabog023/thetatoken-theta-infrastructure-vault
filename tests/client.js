@@ -1,7 +1,9 @@
 var request = require('request');
 
+var Logger = console;
+
 const DEFAULT_CONFIG = {
-    unitPayment: 230 * 5,             // Payment per chunk = 230 GammaWei * 5 secs.
+    unitPayment: 230e12 * 5,             // Payment per chunk = 230 GammaWei * 5 secs.
     reserveBatchSize: 36,             // = reserved_amount / unit_payment = 3 min / 5 secs.
     submitPaymentInterval: 60 * 1000, // Interval of payment submission  = 1 min.
     reserveFundTTL: 300 * 1000,       // Theta backend default expiration time = 300 secs. 
@@ -110,7 +112,7 @@ class BaseWalletService {
         let { resourceId, address, reserveSequence, paymentSequence } = invoice;
         let paymentAmount = this.config.unitPayment;
         let reserveAmount = paymentAmount * this.config.reserveBatchSize;
-        let collateral = reserveAmount + 1;
+        let collateral = reserveAmount + 1e12;
 
         let reservedFund = this.sendChannels.get(resourceId);
         if (!reservedFund || reservedFund.balance < paymentAmount || reservedFund.expiresAt <= (new Date().getTime())) {

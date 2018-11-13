@@ -110,5 +110,42 @@ describe('Local vault', () => {
                 expect(bobAcc2.recv_account.coins.gammawei).to.equal(500e12 - 1e12 /* tx fee for submit payment */);
             });
         });
+
+        describe('dApp flow', () => {
+            it('should pay correctly', async () => {
+                let alice = getRandomUserWallet();
+                let bob = getRandomUserWallet();
+
+                await alice.getAccount();
+                await bob.getAccount();
+
+                // wait for facuet to inject funds.
+                await sleep(5000);
+
+                let aliceAcc = await alice.getAccount();
+                let bobAcc = await bob.getAccount();
+
+                expect(aliceAcc.send_account.coins).not.to.be.undefined;
+                expect(aliceAcc.send_account.coins.gammawei).to.be.above(5000e12)
+
+                let i = 0;
+                while (i < 30) {
+                    let invoice = bob.createInvoice(bobAcc.recv_account.address, 'xxx1');
+                    let res = await alice.createPayment(invoice);
+                    bob.receivePayment(res);
+                    i += 1;
+                }
+                bob._submitReceivedPayments();
+
+                await sleep(5000)
+
+                aliceAcc = await alice.getAccount();
+                bobAcc = await bob.getAccount();
+
+                expect(bobAcc.recv_account.coins.gammawei).to.equal(34470e12)
+
+            });
+        });
+
     });
 });
