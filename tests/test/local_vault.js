@@ -1,6 +1,7 @@
 const chai = require('chai')
 const expect = chai.expect
 chai.use(require('chai-as-promised'))
+chai.config.includeStack = true;
 
 const Wallet = require('../client');
 
@@ -79,17 +80,17 @@ describe('Local vault', () => {
                 let bobAcc = bobAcc1 = await bob.getAccount();
 
                 expect(aliceAcc.send_account.coins).not.to.be.undefined;
-                expect(aliceAcc.send_account.coins.gammawei).to.be.above(5000)
+                expect(aliceAcc.send_account.coins.gammawei).to.be.above(5000e12)
 
                 let resourceID = 'die_another_day';
-                let reserveResp = await alice._reserveFund(resourceID, 1000, 1001);
+                let reserveResp = await alice._reserveFund(resourceID, 1000e12, 1001e12);
                 expect(reserveResp).not.to.be.undefined;
                 expect(reserveResp.reserve_sequence).to.be.above(0)
 
                 let reserveSeq = reserveResp.reserve_sequence;
                 aliceAcc = await alice.getAccount()
                 let paymentResp = await alice._createPayment(bobAcc.recv_account.address,
-                    500, reserveSeq, aliceAcc.send_account.sequence + 1, resourceID);
+                    500e12, reserveSeq, aliceAcc.send_account.sequence + 1, resourceID);
                 expect(paymentResp).not.to.be.undefined;
                 expect(paymentResp.payment).not.to.be.undefined;
 
@@ -104,9 +105,9 @@ describe('Local vault', () => {
                 let bobAcc2 = await bob.getAccount();
 
                 expect(aliceAcc2.send_account.coins.gammawei).to.equal(
-                    aliceAcc1.send_account.coins.gammawei - 1000 - 1001 - 1/* tx fee for reserve fund */);
+                    aliceAcc1.send_account.coins.gammawei - 1000e12 - 1001e12 - 1e12/* tx fee for reserve fund */);
                 expect(bobAcc2.recv_account.coins).not.to.be.undefined;
-                expect(bobAcc2.recv_account.coins.gammawei).to.equal(500 - 1/* tx fee for submit payment */);
+                expect(bobAcc2.recv_account.coins.gammawei).to.equal(500e12 - 1e12 /* tx fee for submit payment */);
             });
         });
     });

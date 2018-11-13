@@ -81,14 +81,10 @@ func (fr *FaucetManager) tryGrantFunds() {
 }
 
 func (fr *FaucetManager) addInitalFund(address common.Address) error {
-	thetaAmount := viper.GetInt64(util.CfgFaucetThetaAmount)
-	gammaAmount := viper.GetInt64(util.CfgFaucetGammaAmount)
+	thetaAmount := viper.GetString(util.CfgFaucetThetaAmount)
+	gammaAmount := viper.GetString(util.CfgFaucetGammaAmount)
 
 	logger := log.WithFields(log.Fields{"method": "addInitalFund", "address": address, "theta": thetaAmount, "gamma": gammaAmount})
-
-	if thetaAmount == 0 && gammaAmount == 0 {
-		return nil
-	}
 
 	err := fr.da.MarkUserFunded(address)
 	if err != nil {
@@ -106,8 +102,7 @@ func (fr *FaucetManager) addInitalFund(address common.Address) error {
 		logger.WithFields(log.Fields{"error": err, "faucet": faucetAddress}).Error("Failed to get seqeuence number")
 	}
 	logger.WithFields(log.Fields{"sequence": sequence}).Info("Executing add fund command")
-	cmd := exec.Command("add_fund.sh", faucetAddress, address.Hex(),
-		fmt.Sprintf("%d", thetaAmount), fmt.Sprintf("%d", gammaAmount),
+	cmd := exec.Command("add_fund.sh", faucetAddress, address.Hex(), thetaAmount, gammaAmount,
 		fmt.Sprintf("%d", sequence+1))
 
 	out, err := cmd.CombinedOutput()

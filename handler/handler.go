@@ -101,13 +101,16 @@ func prepareSendTx(args *SendArgs, record db.Record, chainID string) (*ttypes.Se
 	amount := args.Amount.NoNil()
 
 	// Add minimal fee.
+	feeAmount := new(big.Int)
 	if args.Fee == 0 {
-		args.Fee = 1
+		feeAmount.SetUint64(ttypes.MinimumTransactionFeeGammaWei)
+	} else {
+		feeAmount.SetUint64(args.Fee)
 	}
 
 	fee := ttypes.Coins{
 		ThetaWei: ttypes.Zero,
-		GammaWei: big.NewInt(0).SetUint64(args.Fee),
+		GammaWei: feeAmount,
 	}
 	inputs := []ttypes.TxInput{{
 		Address:  record.RaAddress,
@@ -193,8 +196,11 @@ func prepareReserveFundTx(args *ReserveFundArgs, record db.Record, chainID strin
 	}
 
 	// Add minimal fee.
+	feeAmount := new(big.Int)
 	if args.Fee == 0 {
-		args.Fee = 1
+		feeAmount.SetUint64(ttypes.MinimumTransactionFeeGammaWei)
+	} else {
+		feeAmount.SetUint64(args.Fee)
 	}
 
 	// Send from SendAccount
@@ -222,7 +228,7 @@ func prepareReserveFundTx(args *ReserveFundArgs, record db.Record, chainID strin
 	tx := &ttypes.ReserveFundTx{
 		Fee: ttypes.Coins{
 			ThetaWei: ttypes.Zero,
-			GammaWei: big.NewInt(0).SetUint64(args.Fee),
+			GammaWei: feeAmount,
 		},
 		Source:      input,
 		Collateral:  collateral,
@@ -268,8 +274,11 @@ func (h *ThetaRPCHandler) ReleaseFund(r *http.Request, args *ReleaseFundArgs, re
 
 func prepareReleaseFundTx(args *ReleaseFundArgs, record db.Record, chainID string) (*ttypes.ReleaseFundTx, error) {
 	// Add minimal fee.
+	feeAmount := new(big.Int)
 	if args.Fee == 0 {
-		args.Fee = 1
+		feeAmount.SetUint64(ttypes.MinimumTransactionFeeGammaWei)
+	} else {
+		feeAmount.SetUint64(args.Fee)
 	}
 
 	// Wrap and add signer
@@ -284,7 +293,7 @@ func prepareReleaseFundTx(args *ReleaseFundArgs, record db.Record, chainID strin
 	tx := &ttypes.ReleaseFundTx{
 		Fee: ttypes.Coins{
 			ThetaWei: ttypes.Zero,
-			GammaWei: big.NewInt(0).SetUint64(args.Fee),
+			GammaWei: feeAmount,
 		},
 		Source:          input,
 		ReserveSequence: args.ReserveSequence,
@@ -420,17 +429,21 @@ func prepareSubmitServicePaymentTx(args *SubmitServicePaymentArgs, record db.Rec
 	paymentTx := tx.(*ttypes.ServicePaymentTx)
 	paymentTx.Target = input
 
-	// Add minimal gas/fee.
+	// Add minimal gas.
 	if args.Gas == 0 {
 		args.Gas = 1
 	}
+	// Add minimal fee.
+	feeAmount := new(big.Int)
 	if args.Fee == 0 {
-		args.Fee = 1
+		feeAmount.SetUint64(ttypes.MinimumTransactionFeeGammaWei)
+	} else {
+		feeAmount.SetUint64(args.Fee)
 	}
 
 	paymentTx.Fee = ttypes.Coins{
 		ThetaWei: ttypes.Zero,
-		GammaWei: big.NewInt(0).SetUint64(args.Fee),
+		GammaWei: feeAmount,
 	}
 
 	// Sign the tx
@@ -488,8 +501,11 @@ func prepareInstantiateSplitContractTx(args *InstantiateSplitContractArgs, initi
 		return nil, errors.New("Length of participants doesn't match with length of percentages")
 	}
 	// Add minimal fee.
+	feeAmount := new(big.Int)
 	if args.Fee == 0 {
-		args.Fee = 1
+		feeAmount.SetUint64(ttypes.MinimumTransactionFeeGammaWei)
+	} else {
+		feeAmount.SetUint64(args.Fee)
 	}
 
 	// Use SendAccount to fund tx fee.
@@ -521,7 +537,7 @@ func prepareInstantiateSplitContractTx(args *InstantiateSplitContractArgs, initi
 	tx := &ttypes.SplitRuleTx{
 		Fee: ttypes.Coins{
 			ThetaWei: ttypes.Zero,
-			GammaWei: big.NewInt(0).SetUint64(args.Fee),
+			GammaWei: feeAmount,
 		},
 		ResourceID: []byte(args.ResourceId),
 		Initiator:  initiatorInput,
