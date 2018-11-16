@@ -1,6 +1,7 @@
-var request = require('request');
+const request = require('request');
+const BN = require('bn.js');
 
-var Logger = console;
+const Logger = console;
 
 const DEFAULT_CONFIG = {
     unitPayment: 230e12 * 5,             // Payment per chunk = 230 GammaWei * 5 secs.
@@ -8,6 +9,10 @@ const DEFAULT_CONFIG = {
     submitPaymentInterval: 60 * 1000, // Interval of payment submission  = 1 min.
     reserveFundTTL: 300 * 1000,       // Theta backend default expiration time = 300 secs. 
 };
+
+function isNullBN(a) {
+    return BN.isBN(a) && (a.eq(new BN(null)) || a.eq(new BN(undefined)));
+}
 
 // Wallet base class.
 class BaseWalletService {
@@ -110,18 +115,20 @@ class BaseWalletService {
         }
 
         let { resourceId, address, reserveSequence, paymentSequence } = invoice;
-        let paymentAmount = this.config.unitPayment;
-        let reserveAmount = paymentAmount * this.config.reserveBatchSize;
-        let collateral = reserveAmount + 1e12;
+        let reserveSequenceBN = new BN(reserveSequence);
+        let paymentSequenceBN = new BN(paymentSequence);
+        let paymentAmountBN = new BN(this.config.unitPayment);
+        let reserveAmountBN = paymentAmountBN.mul(new BN(this.config.reserveBatchSize));
+        let collateralBN = reserveAmountBN.add(new BN(1e12));
 
         let reservedFund = this.sendChannels.get(resourceId);
-        if (!reservedFund || reservedFund.balance < paymentAmount || reservedFund.expiresAt <= (new Date().getTime())) {
+        if (!reservedFund || reservedFund.balance.lt(paymentAmountBN) || reservedFund.expiresAt <= (new Date().getTime())) {
             // Create new reserve.
-            let reserve = await this._reserveFund(resourceId, reserveAmount, collateral);
+            let reserve = await this._reserveFund(resourceId, reserveAmountBN, collateralBN);
             reservedFund = {
-                sequence: reserve.reserve_sequence,
+                sequence: new BN(reserve.reserve_sequence),
                 channels: new Map(), // Mapping addresses to channels.
-                balance: reserveAmount,
+                balance: reserveAmountBN,
 
                 // When a reserved fund is about to expire, it should stop to be used to pay.
                 // Adding 5 secs buffer so that peer's payment submission has enough time to be included in blockchain.
@@ -133,27 +140,27 @@ class BaseWalletService {
         let channel = reservedFund.channels.get(address);
         // Create new channel if channel has not been created or existing channel doesn't
         // match with invoice.
-        if (!channel || reserveSequence != reservedFund.sequence ||
-            !paymentSequence || channel.sequence != paymentSequence) {
+        if (!channel || !reserveSequenceBN.eq(reservedFund.sequence) ||
+            isNullBN(paymentSequenceBN) || !channel.sequence.eq(paymentSequenceBN)) {
             // Timestamp based nonce
-            paymentSequence = Date.now();
+            paymentSequenceBN = new BN(Date.now());
             channel = {
-                accumulation: 0,
-                sequence: paymentSequence
+                accumulation: new BN(0),
+                sequence: paymentSequenceBN
             };
             reservedFund.channels.set(address, channel);
         }
         let paymentResp = await this._createPayment(
-            address, channel.accumulation + paymentAmount, reservedFund.sequence, channel.sequence, resourceId);
+            address, channel.accumulation.add(paymentAmountBN), reservedFund.sequence, channel.sequence, resourceId);
 
-        channel.accumulation += paymentAmount;
-        reservedFund.balance -= paymentAmount;
+        channel.accumulation = channel.accumulation.add(paymentAmountBN);
+        reservedFund.balance = reservedFund.balance.sub(paymentAmountBN);
 
         return {
             resourceId: resourceId,
             sourceAddress: this.account.recv_account.address,
             targetAddress: address,
-            amount: paymentAmount,
+            amount: paymentAmountBN,
             paymentHex: paymentResp.payment,
             reserveSequence: reservedFund.sequence,
             paymentSequence: channel.sequence
@@ -197,13 +204,9 @@ class BaseWalletService {
     // getGammaBalance returns Gamma balance in the cached account.
     getGammaBalance() {
         let getGamma = (acc) => {
-            try {
-                for (let coin of acc.coins) {
-                    if (coin.denom === 'GammaWei') {
-                        return coin.amount;
-                    }
-                }
-            } catch (ignore) { }
+            if (acc.coins != null) {
+                return acc.coins.gammawei
+            }
             return -1;
         };
         if (!this.account) {
@@ -277,34 +280,36 @@ class BaseWalletService {
 
     async _reserveFund(resourceId, amount, collateral) {
         await this._getAccount();
-        let sequence = this.account.send_account.sequence || 0;
+        let sequence = new BN(this.account.send_account.sequence || 0),
+            amountBN = new BN(amount),
+            collateralBN = new BN(collateral);
 
         return this._RPC('theta.ReserveFund', {
-            collateral: collateral,
-            fund: amount,
+            collateral: collateralBN.toString(10),
+            fund: amountBN.toString(10),
             resource_ids: [resourceId],
-            sequence: sequence + 1
+            sequence: sequence.add(new BN(1)).toString(10)
         });
     }
 
     async _createPayment(address, amount, reserveSeq, paymentSeq, resourceId) {
         return this._RPC('theta.CreateServicePayment', {
             to: address,
-            amount: amount,
-            reserve_sequence: reserveSeq,
-            payment_sequence: paymentSeq,
+            amount: new BN(amount).toString(10),
+            reserve_sequence: new BN(reserveSeq).toString(10),
+            payment_sequence: new BN(paymentSeq).toString(10),
             resource_id: resourceId
         });
     }
 
     async _submitPayment(payment) {
         await this._getAccount();
-        let sequence = this.account.recv_account.sequence || 0;
+        let sequence = new BN(this.account.recv_account.sequence || 0);
 
         return this._RPC('theta.SubmitServicePayment', {
             to: this.account.recv_account.address,
             payment: payment,
-            sequence: sequence + 1
+            sequence: sequence.add(new BN(1)).toString(10)
         });
     }
 

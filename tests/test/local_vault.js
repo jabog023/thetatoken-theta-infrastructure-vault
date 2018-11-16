@@ -2,6 +2,7 @@ const chai = require('chai')
 const expect = chai.expect
 chai.use(require('chai-as-promised'))
 chai.config.includeStack = true;
+const BN = require('bn.js');
 
 const Wallet = require('../client');
 
@@ -48,8 +49,8 @@ describe('Local vault', () => {
                 expect(acc1.send_account).not.to.be.undefined;
                 expect(acc1.recv_account).not.to.be.undefined;
 
-                expect(acc1.send_account.coins).to.be.undefined;
-                expect(acc1.recv_account.coins).to.be.undefined;
+                expect(acc1.send_account.coins.gammawei).to.be.null;
+                expect(acc1.recv_account.coins.gammawei).to.be.null;
 
                 // wait for facuet to inject funds.
                 await sleep(5000);
@@ -58,10 +59,13 @@ describe('Local vault', () => {
                 expect(acc1.user_id).not.to.be.undefined;
                 expect(acc1.send_account).not.to.be.undefined;
                 expect(acc1.recv_account).not.to.be.undefined;
-                expect(acc1.send_account.coins).not.to.be.undefined;
-                expect(acc1.send_account.coins.gammawei).to.be.above(0);
+                expect(acc1.send_account.coins.gammawei).not.to.be.null;
+                expect(new BN(acc1.send_account.coins.gammawei).gt(0)).to.be.true;
 
-                expect(acc1.recv_account.coins).to.be.undefined;
+                expect(w1.getGammaBalance().sa).to.equal('5000000000000000000');
+                expect(w1.getGammaBalance().ra).to.be.null;
+
+                expect(acc1.recv_account.coins.gammawei).to.be.null;
             });
         });
 
@@ -80,12 +84,12 @@ describe('Local vault', () => {
                 let bobAcc = bobAcc1 = await bob.getAccount();
 
                 expect(aliceAcc.send_account.coins).not.to.be.undefined;
-                expect(aliceAcc.send_account.coins.gammawei).to.be.above(5000e12)
+                expect(new BN(aliceAcc.send_account.coins.gammawei).gt(new BN(5000e12))).to.be.true;
 
                 let resourceID = 'die_another_day';
                 let reserveResp = await alice._reserveFund(resourceID, 1000e12, 1001e12);
                 expect(reserveResp).not.to.be.undefined;
-                expect(reserveResp.reserve_sequence).to.be.above(0)
+                expect(new BN(reserveResp.reserve_sequence).gt(new BN(0))).to.be.true;
 
                 let reserveSeq = reserveResp.reserve_sequence;
                 aliceAcc = await alice.getAccount()
@@ -104,10 +108,12 @@ describe('Local vault', () => {
                 let aliceAcc2 = await alice.getAccount();
                 let bobAcc2 = await bob.getAccount();
 
-                expect(aliceAcc2.send_account.coins.gammawei).to.equal(
-                    aliceAcc1.send_account.coins.gammawei - 1000e12 - 1001e12 - 1e12/* tx fee for reserve fund */);
-                expect(bobAcc2.recv_account.coins).not.to.be.undefined;
-                expect(bobAcc2.recv_account.coins.gammawei).to.equal(500e12 - 1e12 /* tx fee for submit payment */);
+                expect(new BN(aliceAcc2.send_account.coins.gammawei)
+                    .eq(new BN(aliceAcc1.send_account.coins.gammawei)
+                        .sub(new BN(1000e12 + 1001e12 + 1e12))))
+                    .to.be.true;
+                expect(bobAcc2.recv_account.coins.gammawei).not.to.be.null;
+                expect(new BN(bobAcc2.recv_account.coins.gammawei).eq(new BN(500e12 - 1e12))).to.be.true;
             });
         });
 
@@ -126,7 +132,7 @@ describe('Local vault', () => {
                 let bobAcc = await bob.getAccount();
 
                 expect(aliceAcc.send_account.coins).not.to.be.undefined;
-                expect(aliceAcc.send_account.coins.gammawei).to.be.above(5000e12)
+                expect(new BN(aliceAcc.send_account.coins.gammawei).gt(new BN(5000e12))).to.be.true;
 
                 let i = 0;
                 while (i < 30) {
@@ -142,7 +148,7 @@ describe('Local vault', () => {
                 aliceAcc = await alice.getAccount();
                 bobAcc = await bob.getAccount();
 
-                expect(bobAcc.recv_account.coins.gammawei).to.equal(34470e12)
+                expect(new BN(bobAcc.recv_account.coins.gammawei).eq((new BN(34470)).mul(new BN(1e12)))).to.be.true;
 
             });
         });

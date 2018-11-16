@@ -31,25 +31,44 @@ func NewRPCHandler(client util.RPCClient, km keymanager.KeyManager) *ThetaRPCHan
 
 type GetAccountArgs struct{}
 
+type Account struct {
+	Sequence               tcmn.JSONUint64       `json:"sequence"`
+	Balance                ttypes.Coins          `json:"coins"`
+	ReservedFunds          []ttypes.ReservedFund `json:"reserved_funds"`
+	LastUpdatedBlockHeight tcmn.JSONUint64       `json:"last_updated_block_height"`
+	Root                   tcmn.Hash             `json:"root"`
+	CodeHash               tcmn.Hash             `json:"code"`
+	Address                string                `json:"address"`
+}
+
 type GetAccountResult struct {
-	UserID      string                    `json:"user_id"`
-	SendAccount *ukulele.GetAccountResult `json:"send_account"` // Account to send from
-	RecvAccount *ukulele.GetAccountResult `json:"recv_account"` // Account to receive into
+	UserID      string  `json:"user_id"`
+	SendAccount Account `json:"send_account"` // Account to send from
+	RecvAccount Account `json:"recv_account"` // Account to receive into
 }
 
 // getAccount is a helper function to query account from blockchain
-func (h *ThetaRPCHandler) getAccount(address string) (*ukulele.GetAccountResult, error) {
+func (h *ThetaRPCHandler) getAccount(address string) Account {
+	acc := Account{Address: address}
 	resp, err := h.Client.Call("theta.GetAccount", ukulele.GetAccountArgs{Address: address})
-	if err != nil {
-		return nil, errors.Wrap(err, "Error in RPC call")
+	if err != nil || resp.Error != nil {
+		return acc
 	}
-	result := &ukulele.GetAccountResult{}
+	result := &ukulele.GetAccountResult{Account: ttypes.NewAccount()}
 	err = resp.GetObject(result)
-	result.Address = address
-	return result, nil
+	if err != nil {
+		return acc
+	}
+	acc.Sequence = tcmn.JSONUint64(result.Sequence)
+	acc.Balance = result.Balance
+	acc.ReservedFunds = result.ReservedFunds
+	acc.LastUpdatedBlockHeight = tcmn.JSONUint64(result.LastUpdatedBlockHeight)
+	acc.Root = result.Root
+	acc.CodeHash = result.CodeHash
+	return acc
 }
 
-func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, result *GetAccountResult) (err error) {
+func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, result *GetAccountResult) error {
 	record, err := h.getRecord(r)
 	if err != nil {
 		return errors.Wrapf(err, "Failed to find userid: %v", record.UserID)
@@ -57,31 +76,24 @@ func (h *ThetaRPCHandler) GetAccount(r *http.Request, args *GetAccountArgs, resu
 	userid := record.UserID
 
 	// Load SendAccount
-	sendAccount, err := h.getAccount(record.SaAddress.String())
-	if err != nil {
-		return errors.Wrapf(err, "Failed to find sendAccount for %v", userid)
-	}
+	sendAccount := h.getAccount(record.SaAddress.String())
 	result.SendAccount = sendAccount
 
 	// Load RecvAccount
-	recvAccount, err := h.getAccount(record.RaAddress.String())
-	if err != nil {
-		return errors.Wrapf(err, "Failed to find recvAccount for %v", userid)
-	}
+	recvAccount := h.getAccount(record.RaAddress.String())
 	result.RecvAccount = recvAccount
 
 	result.UserID = userid
-	return
+	return nil
 }
 
 // ------------------------------- Send -----------------------------------
 
 type SendArgs struct {
-	To       string       `json:"to"`       // Required. Outputs including addresses and amount.
-	Amount   ttypes.Coins `json:"amount"`   // Required. The amount to send.
-	Fee      uint64       `json:"fee"`      // Optional. Transaction fee. Default to 0.
-	Gas      uint64       `json:"gas"`      // Optional. Amount of gas. Default to 0.
-	Sequence uint64       `json:"sequence"` // Required. Sequence number of this transaction.
+	To       string          `json:"to"`       // Required. Outputs including addresses and amount.
+	Amount   ttypes.Coins    `json:"amount"`   // Required. The amount to send.
+	Fee      *tcmn.JSONBig   `json:"fee"`      // Optional. Transaction fee. Default to 0.
+	Sequence tcmn.JSONUint64 `json:"sequence"` // Required. Sequence number of this transaction.
 }
 
 func (h *ThetaRPCHandler) Send(r *http.Request, args *SendArgs, result *ukulele.BroadcastRawTransactionResult) (err error) {
@@ -102,10 +114,10 @@ func prepareSendTx(args *SendArgs, record db.Record, chainID string) (*ttypes.Se
 
 	// Add minimal fee.
 	feeAmount := new(big.Int)
-	if args.Fee == 0 {
+	if args.Fee == nil {
 		feeAmount.SetUint64(ttypes.MinimumTransactionFeeGammaWei)
 	} else {
-		feeAmount.SetUint64(args.Fee)
+		feeAmount = (*big.Int)(args.Fee)
 	}
 
 	fee := ttypes.Coins{
@@ -115,7 +127,7 @@ func prepareSendTx(args *SendArgs, record db.Record, chainID string) (*ttypes.Se
 	inputs := []ttypes.TxInput{{
 		Address:  record.RaAddress,
 		Coins:    amount.Plus(fee),
-		Sequence: args.Sequence,
+		Sequence: (uint64)(args.Sequence),
 	}}
 	if args.Sequence == 1 {
 		inputs[0].PubKey = record.RaPubKey
@@ -157,18 +169,17 @@ func (h *ThetaRPCHandler) BroadcastRawTransaction(r *http.Request, args *ukulele
 // --------------------------- Reserve -------------------------------
 
 type ReserveFundArgs struct {
-	Fee         uint64   `json:"fee"`          // Optional. Transaction fee. Default to 0.
-	Gas         uint64   `json:"gas"`          // Optional. Amount of gas. Default to 0.
-	Collateral  uint64   `json:"collateral"`   // Required. Amount in GammaWei as the collateral
-	Fund        uint64   `json:"fund"`         // Required. Amount in GammaWei to reserve.
-	ResourceIds []string `json:"resource_ids"` // List of resource ID
-	Duration    uint64   `json:"duration"`     // Optional. Number of blocks to lock the fund.
-	Sequence    uint64   `json:"sequence"`     // Required. Sequence number of this transaction.
+	Fee         *tcmn.JSONBig   `json:"fee"`          // Optional. Transaction fee. Default to 0.
+	Collateral  *tcmn.JSONBig   `json:"collateral"`   // Required. Amount in GammaWei as the collateral
+	Fund        *tcmn.JSONBig   `json:"fund"`         // Required. Amount in GammaWei to reserve.
+	ResourceIds []string        `json:"resource_ids"` // List of resource ID
+	Duration    tcmn.JSONUint64 `json:"duration"`     // Optional. Number of blocks to lock the fund.
+	Sequence    tcmn.JSONUint64 `json:"sequence"`     // Required. Sequence number of this transaction.
 }
 
 type ReserveFundResult struct {
 	*ukulele.BroadcastRawTransactionResult
-	ReserveSequence uint64 `json:"reserve_sequence"` // Sequence number of the reserved fund.
+	ReserveSequence tcmn.JSONUint64 `json:"reserve_sequence"` // Sequence number of the reserved fund.
 }
 
 func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, result *ReserveFundResult) (err error) {
@@ -192,38 +203,38 @@ func (h *ThetaRPCHandler) ReserveFund(r *http.Request, args *ReserveFundArgs, re
 
 func prepareReserveFundTx(args *ReserveFundArgs, record db.Record, chainID string) (*ttypes.ReserveFundTx, error) {
 	if args.Duration == 0 {
-		args.Duration = uint64(viper.GetInt64(util.CfgThetaDefaultReserveDurationSecs))
+		args.Duration = tcmn.JSONUint64(viper.GetInt64(util.CfgThetaDefaultReserveDurationSecs))
 	}
 
 	// Add minimal fee.
 	feeAmount := new(big.Int)
-	if args.Fee == 0 {
+	if args.Fee == nil {
 		feeAmount.SetUint64(ttypes.MinimumTransactionFeeGammaWei)
 	} else {
-		feeAmount.SetUint64(args.Fee)
+		feeAmount = (*big.Int)(args.Fee)
 	}
 
 	// Send from SendAccount
 	input := ttypes.TxInput{
 		Coins: ttypes.Coins{
 			ThetaWei: big.NewInt(0),
-			GammaWei: big.NewInt(0).SetUint64(args.Fund),
+			GammaWei: (*big.Int)(args.Fund),
 		},
-		Sequence: args.Sequence,
+		Sequence: uint64(args.Sequence),
 		Address:  record.SaAddress,
 	}
 	if args.Sequence == 1 {
 		input.PubKey = record.SaPubKey
 	}
 
-	var resourceIds []tcmn.Bytes
+	var resourceIds []string
 	for _, ridStr := range args.ResourceIds {
-		resourceIds = append(resourceIds, []byte(ridStr))
+		resourceIds = append(resourceIds, ridStr)
 	}
 
 	collateral := ttypes.Coins{
 		ThetaWei: big.NewInt(0),
-		GammaWei: big.NewInt(0).SetUint64(args.Collateral),
+		GammaWei: (*big.Int)(args.Collateral),
 	}
 	tx := &ttypes.ReserveFundTx{
 		Fee: ttypes.Coins{
@@ -233,7 +244,7 @@ func prepareReserveFundTx(args *ReserveFundArgs, record db.Record, chainID strin
 		Source:      input,
 		Collateral:  collateral,
 		ResourceIDs: resourceIds,
-		Duration:    args.Duration,
+		Duration:    uint64(args.Duration),
 	}
 
 	sig, err := record.SaPrivateKey.Sign(tx.SignBytes(chainID))
@@ -248,10 +259,9 @@ func prepareReserveFundTx(args *ReserveFundArgs, record db.Record, chainID strin
 // --------------------------- Release -------------------------------
 
 type ReleaseFundArgs struct {
-	Fee             uint64 `json:"fee"`              // Optional. Transaction fee. Default to 0.
-	Gas             uint64 `json:"gas"`              // Optional. Amount of gas. Default to 0.
-	Sequence        uint64 `json:"sequence"`         // Required. Sequence number of this transaction.
-	ReserveSequence uint64 `json:"reserve_sequence"` // Required. Sequence number of the fund to release.
+	Fee             *tcmn.JSONBig   `json:"fee"`              // Optional. Transaction fee. Default to 0.
+	Sequence        tcmn.JSONUint64 `json:"sequence"`         // Required. Sequence number of this transaction.
+	ReserveSequence tcmn.JSONUint64 `json:"reserve_sequence"` // Required. Sequence number of the fund to release.
 }
 
 type ReleaseFundResult struct {
@@ -275,15 +285,15 @@ func (h *ThetaRPCHandler) ReleaseFund(r *http.Request, args *ReleaseFundArgs, re
 func prepareReleaseFundTx(args *ReleaseFundArgs, record db.Record, chainID string) (*ttypes.ReleaseFundTx, error) {
 	// Add minimal fee.
 	feeAmount := new(big.Int)
-	if args.Fee == 0 {
+	if args.Fee == nil {
 		feeAmount.SetUint64(ttypes.MinimumTransactionFeeGammaWei)
 	} else {
-		feeAmount.SetUint64(args.Fee)
+		feeAmount = (*big.Int)(args.Fee)
 	}
 
 	// Wrap and add signer
 	input := ttypes.TxInput{
-		Sequence: args.Sequence,
+		Sequence: uint64(args.Sequence),
 		Address:  record.SaAddress,
 	}
 	if args.Sequence == 1 {
@@ -296,7 +306,7 @@ func prepareReleaseFundTx(args *ReleaseFundArgs, record db.Record, chainID strin
 			GammaWei: feeAmount,
 		},
 		Source:          input,
-		ReserveSequence: args.ReserveSequence,
+		ReserveSequence: uint64(args.ReserveSequence),
 	}
 
 	sig, err := record.RaPrivateKey.Sign(tx.SignBytes(chainID))
@@ -310,11 +320,11 @@ func prepareReleaseFundTx(args *ReleaseFundArgs, record db.Record, chainID strin
 // --------------------------- CreateServicePayment -------------------------------
 
 type CreateServicePaymentArgs struct {
-	To              string `json:"to"`               // Required. Address to target account.
-	Amount          uint64 `json:"amount"`           // Required. Amount of payment in GammaWei
-	ResourceId      string `json:"resource_id"`      // Required. Resource ID the payment is for.
-	PaymentSequence uint64 `json:"payment_sequence"` // Required. each on-chain settlement needs to increase the payment sequence by 1
-	ReserveSequence uint64 `json:"reserve_sequence"` // Required. Sequence number of the fund to send.
+	To              string          `json:"to"`               // Required. Address to target account.
+	Amount          *tcmn.JSONBig   `json:"amount"`           // Required. Amount of payment in GammaWei
+	ResourceId      string          `json:"resource_id"`      // Required. Resource ID the payment is for.
+	PaymentSequence tcmn.JSONUint64 `json:"payment_sequence"` // Required. each on-chain settlement needs to increase the payment sequence by 1
+	ReserveSequence tcmn.JSONUint64 `json:"reserve_sequence"` // Required. Sequence number of the fund to send.
 }
 
 type CreateServicePaymentResult struct {
@@ -352,7 +362,7 @@ func prepareCreateServicePaymentTx(args *CreateServicePaymentArgs, record db.Rec
 	sourceInput.Address = address
 	sourceInput.Coins = ttypes.Coins{
 		ThetaWei: ttypes.Zero,
-		GammaWei: big.NewInt(0).SetUint64(args.Amount),
+		GammaWei: (*big.Int)(args.Amount),
 	}
 
 	targetAddress := tcmn.HexToAddress(args.To)
@@ -363,9 +373,9 @@ func prepareCreateServicePaymentTx(args *CreateServicePaymentArgs, record db.Rec
 	tx := &ttypes.ServicePaymentTx{
 		Source:          sourceInput,
 		Target:          targetInput,
-		PaymentSequence: args.PaymentSequence,
-		ReserveSequence: args.ReserveSequence,
-		ResourceID:      []byte(args.ResourceId),
+		PaymentSequence: uint64(args.PaymentSequence),
+		ReserveSequence: uint64(args.ReserveSequence),
+		ResourceID:      args.ResourceId,
 	}
 
 	sig, err := record.SaPrivateKey.Sign(tx.SourceSignBytes(chainID))
@@ -383,10 +393,9 @@ func prepareCreateServicePaymentTx(args *CreateServicePaymentArgs, record db.Rec
 // --------------------------- SubmitServicePayment -------------------------------
 
 type SubmitServicePaymentArgs struct {
-	Fee      uint64 `json:"fee"`      // Optional. Transaction fee. Default to 0.
-	Gas      uint64 `json:"gas"`      // Optional. Amount of gas. Default to 0.
-	Payment  string `json:"payment"`  // Required. Hex of sender-signed payment stub.
-	Sequence uint64 `json:"sequence"` // Required. Sequence number of this transaction.
+	Fee      *tcmn.JSONBig   `json:"fee"`      // Optional. Transaction fee. Default to 0.
+	Payment  string          `json:"payment"`  // Required. Hex of sender-signed payment stub.
+	Sequence tcmn.JSONUint64 `json:"sequence"` // Required. Sequence number of this transaction.
 }
 
 func (h *ThetaRPCHandler) SubmitServicePayment(r *http.Request, args *SubmitServicePaymentArgs, result *ukulele.BroadcastRawTransactionResult) (err error) {
@@ -406,7 +415,7 @@ func prepareSubmitServicePaymentTx(args *SubmitServicePaymentArgs, record db.Rec
 	address := record.RaAddress
 
 	input := ttypes.TxInput{
-		Sequence: args.Sequence,
+		Sequence: uint64(args.Sequence),
 	}
 	input.Address = address
 	if args.Sequence == 1 {
@@ -429,16 +438,12 @@ func prepareSubmitServicePaymentTx(args *SubmitServicePaymentArgs, record db.Rec
 	paymentTx := tx.(*ttypes.ServicePaymentTx)
 	paymentTx.Target = input
 
-	// Add minimal gas.
-	if args.Gas == 0 {
-		args.Gas = 1
-	}
 	// Add minimal fee.
 	feeAmount := new(big.Int)
-	if args.Fee == 0 {
+	if args.Fee == nil {
 		feeAmount.SetUint64(ttypes.MinimumTransactionFeeGammaWei)
 	} else {
-		feeAmount.SetUint64(args.Fee)
+		feeAmount = (*big.Int)(args.Fee)
 	}
 
 	paymentTx.Fee = ttypes.Coins{
@@ -458,14 +463,13 @@ func prepareSubmitServicePaymentTx(args *SubmitServicePaymentArgs, record db.Rec
 // --------------------------- InstantiateSplitContract -------------------------------
 
 type InstantiateSplitContractArgs struct {
-	Fee          uint64   `json:"fee"`          // Optional. Transaction fee. Default to 0.
-	Gas          uint64   `json:"gas"`          // Optional. Amount of gas. Default to 0.
-	ResourceId   string   `json:"resource_id"`  // Required. The resourceId.
-	Initiator    string   `json:"initiator"`    // Required. Name of initiator account.
-	Participants []string `json:"participants"` // Required. User IDs participating in the split.
-	Percentages  []uint   `json:"percentages"`  // Required. The split percentage for each corresponding user.
-	Duration     uint64   `json:"duration"`     // Optional. Number of blocks before the contract expires.
-	Sequence     uint64   `json:"sequence"`     // Optional. Sequence number of this transaction.
+	Fee          *tcmn.JSONBig   `json:"fee"`          // Optional. Transaction fee. Default to 0.
+	ResourceId   string          `json:"resource_id"`  // Required. The resourceId.
+	Initiator    string          `json:"initiator"`    // Required. Name of initiator account.
+	Participants []string        `json:"participants"` // Required. User IDs participating in the split.
+	Percentages  []uint          `json:"percentages"`  // Required. The split percentage for each corresponding user.
+	Duration     tcmn.JSONUint64 `json:"duration"`     // Optional. Number of blocks before the contract expires.
+	Sequence     tcmn.JSONUint64 `json:"sequence"`     // Optional. Sequence number of this transaction.
 }
 
 func (h *ThetaRPCHandler) InstantiateSplitContract(r *http.Request, args *InstantiateSplitContractArgs, result *ukulele.BroadcastRawTransactionResult) (err error) {
@@ -502,10 +506,10 @@ func prepareInstantiateSplitContractTx(args *InstantiateSplitContractArgs, initi
 	}
 	// Add minimal fee.
 	feeAmount := new(big.Int)
-	if args.Fee == 0 {
+	if args.Fee == nil {
 		feeAmount.SetUint64(ttypes.MinimumTransactionFeeGammaWei)
 	} else {
-		feeAmount.SetUint64(args.Fee)
+		feeAmount = (*big.Int)(args.Fee)
 	}
 
 	// Use SendAccount to fund tx fee.
@@ -529,9 +533,9 @@ func prepareInstantiateSplitContractTx(args *InstantiateSplitContractArgs, initi
 		})
 	}
 
-	// duration := uint64(86400 * 365 * 10)
-	if args.Duration == 0 {
-		args.Duration = uint64(86400 * 365 * 10)
+	duration := uint64(86400 * 365 * 10)
+	if args.Duration != 0 {
+		duration = uint64(args.Duration)
 	}
 
 	tx := &ttypes.SplitRuleTx{
@@ -539,10 +543,10 @@ func prepareInstantiateSplitContractTx(args *InstantiateSplitContractArgs, initi
 			ThetaWei: ttypes.Zero,
 			GammaWei: feeAmount,
 		},
-		ResourceID: []byte(args.ResourceId),
+		ResourceID: args.ResourceId,
 		Initiator:  initiatorInput,
 		Splits:     splits,
-		Duration:   args.Duration,
+		Duration:   duration,
 	}
 
 	sig, err := initiator.RaPrivateKey.Sign(tx.SignBytes(chainID))

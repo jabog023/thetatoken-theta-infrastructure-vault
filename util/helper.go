@@ -5,6 +5,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/thetatoken/ukulele/common"
+	"github.com/thetatoken/ukulele/ledger/types"
 	ukulele "github.com/thetatoken/ukulele/rpc"
 	rpcc "github.com/ybbus/jsonrpc"
 )
@@ -22,7 +23,7 @@ func GetSequence(client RPCClient, address common.Address) (sequence uint64, err
 	if resp.Error != nil {
 		return 0, resp.Error
 	}
-	result := &ukulele.GetAccountResult{}
+	result := &ukulele.GetAccountResult{Account: types.NewAccount()}
 	err = resp.GetObject(result)
 	if err != nil {
 		return 0, err
